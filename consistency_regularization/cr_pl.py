@@ -91,15 +91,26 @@ class CR_pl(LightningModule):
     return testloader
 
   def configure_optimizers(self):
-    optimizer = torch.optim.AdamW(
-        self.model.parameters(),
-        lr=self.hparams.lr,
-        weight_decay=5e-4,
-    )
-    steps_per_epoch = (int)(45000 // self.hparams.batch_size)
-    lr_decay_gamma = 0.1
+    if self.hparams.optimizer == 'adamw':
+        optimizer = torch.optim.AdamW(
+            self.model.parameters(),
+            lr=self.hparams.lr,
+            weight_decay=5e-4,
+        )
+    elif self.hparams.optimizer == 'sgd':
+        optimizer = torch.optim.SGD(
+            self.model.parameters(),
+            lr=self.hparams.lr,
+            momentum=0.9,
+            weight_decay=5e-4,
+        )
+    else:
+        raise NotImplementedError()
+
+    #steps_per_epoch = (int)(45000 // self.hparams.batch_size)
+
     milestones = [int(0.5 * self.hparams.max_epochs), int(0.75 * self.hparams.max_epochs)]
-    scheduler = MultiStepLR(optimizer, gamma=lr_decay_gamma, milestones=milestones)
+    scheduler = lr_scheduler.MultiStepLR(optimizer, gamma=lr_decay_gamma, milestones=milestones)
     # scheduler_dict = {
     #     "scheduler": OneCycleLR(
     #         optimizer,
@@ -110,7 +121,6 @@ class CR_pl(LightningModule):
     #     "interval": "step",
     # }
     return {"optimizer": optimizer, "lr_scheduler": scheduler}
-
   def add_model_specific_args(parent_parser, root_dir):  # pragma: no cover
     """
     Parameters you define here will be available to your model through self.hparams
