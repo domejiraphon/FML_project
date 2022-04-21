@@ -34,8 +34,8 @@ def main(hparams):
     # 2 DEFINE CALLBACKS
     # ------------------------
     bar = TQDMProgressBar(refresh_rate=1, process_position=0)
-    swa_callback = StochasticWeightAveraging(swa_epoch_start=0.8, swa_lrs=None, annealing_epochs=10, 
-        annealing_strategy='cos', avg_fn=None, device=None)
+    #swa_callback = StochasticWeightAveraging(swa_epoch_start=0.8, swa_lrs=None, annealing_epochs=10, 
+        #annealing_strategy='cos', avg_fn=None, device=None)
     checkpoint_callback = ModelCheckpoint(
         save_top_k=1,
         verbose=True,
@@ -43,7 +43,7 @@ def main(hparams):
         mode='min',
         save_weights_only=False
         )
-    early_stop_callback = EarlyStopping(monitor="val_loss", min_delta=0.00, patience=5, verbose=False, mode="min")
+    #early_stop_callback = EarlyStopping(monitor="val_loss", min_delta=0.00, patience=5, verbose=False, mode="min")
     
     # ------------------------
     # 3 INIT TRAINER
@@ -56,7 +56,7 @@ def main(hparams):
         max_epochs=hparams.max_epochs,
         #strategy=None,
         strategy=DDPStrategy(find_unused_parameters=False),
-        callbacks=[swa_callback, checkpoint_callback, early_stop_callback, bar]
+        callbacks=[checkpoint_callback, bar]
         )
 
     # ------------------------
