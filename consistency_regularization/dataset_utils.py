@@ -80,6 +80,7 @@ def get_transform(augment_type):
 def get_dataset(augment, download=False):
     train_transform, test_transform = get_transform(augment)
     train_transform = MultiDataTransform(train_transform)
+    test_transform =  MultiDataTransform(test_transform)
 
     image_size = (3, 32, 32)
     n_classes = 10

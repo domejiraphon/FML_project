@@ -53,7 +53,6 @@ class CR_pl(LightningModule):
   def evaluate(self, batch, stage=None):
     images, labels = batch
     images_aug1, images_aug2 = images[0], images[1]
-    #print(images_aug1.shape)
     images_pair = torch.cat([images_aug1, images_aug2], dim=0)  # 2B
     with torch.enable_grad():
       images_adv = self.adversary(images_pair, labels.repeat(2))
@@ -84,7 +83,7 @@ class CR_pl(LightningModule):
     return trainloader
 
   def val_dataloader(self):
-    valloader = DataLoader(self.val_set, shuffle=False, batch_size=self.hparams.batch_size, **self.kwargs)
+    valloader = DataLoader(self.test_set, shuffle=False, batch_size=self.hparams.batch_size, **self.kwargs)
     return valloader
 
   def test_dataloader(self):
