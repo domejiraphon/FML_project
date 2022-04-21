@@ -84,7 +84,7 @@ class CR_pl(LightningModule):
     return trainloader
 
   def val_dataloader(self):
-    valloader = DataLoader(self.val_set, shuffle=False, batch_size=self.hparams.batch_size, **self.kwargs)
+    valloader = DataLoader(self.test_set, shuffle=False, batch_size=self.hparams.batch_size, **self.kwargs)
     return valloader
 
   def test_dataloader(self):
