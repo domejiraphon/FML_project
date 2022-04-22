@@ -1,13 +1,8 @@
-pip install git+https://github.com/RobustBench/robustbench.git
 
 pip install torchtext
-
 pip install pytorch-lightning
-
 pip install advertorch
-
 pip install lightning-bolts
-
 Add:
 {
 def zero_gradients(x):

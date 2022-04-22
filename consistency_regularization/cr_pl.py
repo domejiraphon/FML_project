@@ -5,9 +5,12 @@ from attack_utils import *
 from loss_utils import _jensen_shannon_div
 import torch
 import torch.nn as nn
-from torch.optim.lr_scheduler import OneCycleLR, MultiStepLR
+import torch.optim.lr_scheduler as lr_scheduler
+#import torch.optim.lr_scheduler import OneCycleLR, MultiStepLR
 from torch.utils.data import DataLoader
 from pytorch_lightning import LightningModule, Trainer
+from autoattack import AutoAttack
+from robustbench.data import load_cifar10
 
 class CR_pl(LightningModule):
   def __init__(self, hparams, backbone):
@@ -21,11 +24,17 @@ class CR_pl(LightningModule):
     self.train_set, self.test_set, self.image_size, self.n_classes = get_dataset('autoaug', True)
     self.adversary = attack_module(self.model, self.criterion)
 
+    self.autoattack = AutoAttack(backbone, 
+                  norm='Linf', eps=8/255, version='custom', 
+                  attacks_to_run=['apgd-ce', 'apgd-dlr'],
+                  verbose=False,)
+    self.autoattack.apgd.n_restarts = 1
+
   def forward(self, x):
     out = self.model(x)
     return out
 
-  def _train(self, batch, stage):
+  def _train(self, batch, stage, batch_idx):
     images, labels = batch
     images_aug1, images_aug2 = images[0], images[1]
     images_pair = torch.cat([images_aug1, images_aug2], dim=0)  # 2B
@@ -43,12 +52,15 @@ class CR_pl(LightningModule):
 
     if stage:
       self.log(f"{stage}_loss", loss, prog_bar=True)
-    
+      if batch_idx % 100 == 0:
+        robust_accuracy_dict = self.eval_autoattack()
+        for key, val in robust_accuracy_dict.items():
+          self.log(f"Autoattack_{key}", val*100)
     return loss
 
   def training_step(self, batch, batch_idx):
-    loss = self._train(batch, "train")
-    return loss
+    loss = self._train(batch, "train", batch_idx)
+    return loss 
 
   def evaluate(self, batch, stage=None):
     images, labels = batch
@@ -108,7 +120,7 @@ class CR_pl(LightningModule):
         raise NotImplementedError()
 
     #steps_per_epoch = (int)(45000 // self.hparams.batch_size)
-
+    lr_decay_gamma=0.1
     milestones = [int(0.5 * self.hparams.max_epochs), int(0.75 * self.hparams.max_epochs)]
     scheduler = lr_scheduler.MultiStepLR(optimizer, gamma=lr_decay_gamma, milestones=milestones)
     # scheduler_dict = {
@@ -121,6 +133,7 @@ class CR_pl(LightningModule):
     #     "interval": "step",
     # }
     return {"optimizer": optimizer, "lr_scheduler": scheduler}
+  
   def add_model_specific_args(parent_parser, root_dir):  # pragma: no cover
     """
     Parameters you define here will be available to your model through self.hparams
@@ -134,9 +147,18 @@ class CR_pl(LightningModule):
     parser.add_argument('--lam', default=1, type=float)
     parser.add_argument('--T', default=0.5, type=float)
     parser.add_argument('--lr', default=0.1, type=float)
-    parser.add_argument('--batch_size', default=16, type=int)
+    parser.add_argument('--batch_size', default=512, type=int)
     parser.add_argument("--max_epochs", type=int, default=150)
     parser.add_argument('--optimizer', default='sgd', type=str)
     parser.add_argument('--num_workers', default=8, type=int)
     parser.add_argument('--pin_memory', default=True, type=bool)
     return parser
+
+  def eval_autoattack(self):
+    self.model.eval()
+    with torch.no_grad():
+      x_test, y_test = load_cifar10(n_examples=1000)
+      robust_accuracy_dict = self.autoattack.run_standard_evaluation(x_test.cuda(), y_test.cuda())
+    self.model.train()
+    return robust_accuracy_dict
+

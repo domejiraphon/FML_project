@@ -1,14 +1,17 @@
-import os
+import os, sys 
 import WideResNet
 import pytorch_lightning as pl
 import torchvision
 from WideResNet import *
+from torch.utils.tensorboard import SummaryWriter
 from cr_pl import *
 from pytorch_lightning.callbacks import StochasticWeightAveraging, TQDMProgressBar, ModelCheckpoint
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 from pytorch_lightning.utilities.seed import seed_everything
 from pytorch_lightning.strategies.ddp import DDPStrategy
-
+from pytorch_lightning.loggers import TensorBoardLogger 
+from utils import utils 
+from utils import cmd_args_utils
 SEED = 2022
 seed_everything(SEED)
 
@@ -26,8 +29,12 @@ def main(hparams):
     # ------------------------
     # 1 INIT LIGHTNING MODEL
     # ------------------------
-    backbone = WideResNet(depth=hparams.net_depth, n_classes=hparams.num_classes, widen_factor=hparams.wide_factor)
+    backbone = WideResNet(depth=hparams.net_depth, 
+                         n_classes=hparams.num_classes, 
+                         widen_factor=hparams.wide_factor,
+                         use_sn=hparams.use_sn)
     #backbone = create_model()
+    
     cr_pl = CR_pl(hparams, backbone)
     
     # ------------------------
@@ -36,7 +43,11 @@ def main(hparams):
     bar = TQDMProgressBar(refresh_rate=1, process_position=0)
     #swa_callback = StochasticWeightAveraging(swa_epoch_start=0.8, swa_lrs=None, annealing_epochs=10, 
         #annealing_strategy='cos', avg_fn=None, device=None)
+    runpath = "runs/"
+    if hparams.restart:
+      os.system(f"rm -rf {runpath + hparams.model_dir}")
     checkpoint_callback = ModelCheckpoint(
+        dirpath=runpath + hparams.model_dir, 
         save_top_k=1,
         verbose=True,
         monitor='val_loss',
@@ -48,6 +59,9 @@ def main(hparams):
     # ------------------------
     # 3 INIT TRAINER
     # ------------------------
+    logger = TensorBoardLogger(save_dir=hparams.runpath,
+                    name=hparams.model_dir,
+                  )
     trainer = pl.Trainer(
         progress_bar_refresh_rate=1,
         gpus=hparams.gpus,
@@ -56,7 +70,8 @@ def main(hparams):
         max_epochs=hparams.max_epochs,
         #strategy=None,
         strategy=DDPStrategy(find_unused_parameters=False),
-        callbacks=[checkpoint_callback, bar]
+        callbacks=[checkpoint_callback, bar],
+        logger=logger,
         )
 
     # ------------------------
@@ -69,51 +84,13 @@ if __name__ == '__main__':
     # TRAINING ARGUMENTS
     # ------------------------
     # these are project-wide arguments
-
+    sys.excepthook = utils.colored_hook(os.path.dirname(os.path.realpath(__file__)))
     root_dir = os.path.dirname('./cr_pl')
     parent_parser = argparse.ArgumentParser(add_help=False)
-
+    cmd_args_utils.add_common_flags(parent_parser)
     # gpu args
-    parent_parser.add_argument(
-        '--gpus',
-        type=int,
-        default=1,
-        help='how many gpus'
-    )
-    parent_parser.add_argument(
-        '--num_nodes',
-        type=int,
-        default=1,
-        help='how many nodes'
-    )
-    parent_parser.add_argument(
-        '--precision',
-        type=int,
-        default=16,
-        help='default to use mixed precision 16'
-    )
-
-    parent_parser.add_argument(
-        '--num_classes',
-        type=int,
-        default=10,
-        help='number of classes for the dataset'
-    )
-
-    parent_parser.add_argument(
-        '--net_depth',
-        type=int,
-        default=34,
-        help='wide resnet depth'
-    )
-
-    parent_parser.add_argument(
-        '--wide_factor',
-        type=int,
-        default=10,
-        help='wide resenet wide factor'
-    )
-
+    
+   
     # each LightningModule defines arguments relevant to it
     parser = CR_pl.add_model_specific_args(parent_parser, root_dir)
     hyperparams = parser.parse_args()
