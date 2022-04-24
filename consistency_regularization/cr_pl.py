@@ -2,7 +2,7 @@ import argparse
 from autoaugment import *
 from dataset_utils import *
 from attack_utils import *
-from loss_utils import _jensen_shannon_div
+from loss_utils import _jensen_shannon_div, ALP
 import torch
 import torch.nn as nn
 import torch.optim.lr_scheduler as lr_scheduler
@@ -11,6 +11,7 @@ from torch.utils.data import DataLoader
 from pytorch_lightning import LightningModule, Trainer
 from autoattack import AutoAttack
 from robustbench.data import load_cifar10
+from utils import grad_norm
 
 class CR_pl(LightningModule):
   def __init__(self, hparams, backbone):
@@ -26,7 +27,7 @@ class CR_pl(LightningModule):
 
     self.autoattack = AutoAttack(backbone, 
                   norm='Linf', eps=8/255, version='custom', 
-                  attacks_to_run=['apgd-ce', 'apgd-dlr'],
+                  attacks_to_run=['apgd-ce', 'apgd-dlr', 'apgd-t', 'fab-t'],
                   verbose=False,)
     self.autoattack.apgd.n_restarts = 1
 
@@ -39,23 +40,37 @@ class CR_pl(LightningModule):
     images_aug1, images_aug2 = images[0], images[1]
     images_pair = torch.cat([images_aug1, images_aug2], dim=0)  # 2B
     images_adv = self.adversary(images_pair, labels.repeat(2))
+    loss = 0
+    if self.hparams.alp:
+      all_imgs = torch.cat([images_pair, images_adv], 0)
+      outputs = self(all_imgs)
+      outputs_imgs = outputs[:images_pair.shape[0]]
+      outputs_adv = outputs[images_pair.shape[0]:]
+      loss_alp = self.hparams.lam2 * ALP(images_pair, images_adv, outputs_imgs, outputs_adv)
+      loss = loss + loss_alp 
+    elif self.hparams.grad_norm:
+      outputs_adv = grad_norm.normalize_gradient(self.model, images_adv)
+    else:
+      outputs_adv = self(images_adv)
 
-    outputs_adv = self(images_adv)
     loss_ce = self.criterion(outputs_adv, labels.repeat(2))
 
-    ### consistency regularization ###
+      ### consistency regularization ###
     outputs_adv1, outputs_adv2 = outputs_adv.chunk(2)
     loss_con = self.hparams.lam * _jensen_shannon_div(outputs_adv1, outputs_adv2, self.hparams.T)
 
     ### total loss ###
-    loss = loss_ce + loss_con
+    loss = loss + loss_ce + loss_con
 
     if stage:
-      self.log(f"{stage}_loss", loss, prog_bar=True)
+      self.log(f"{stage}/loss", loss, prog_bar=True)
+      #robust_accuracy_dict = self.eval_autoattack()
+      #print(robust_accuracy_dict)
       if batch_idx % 100 == 0:
         robust_accuracy_dict = self.eval_autoattack()
         for key, val in robust_accuracy_dict.items():
-          self.log(f"Autoattack_{key}", val*100)
+          self.log(f"Autoattack/{key}", val*100)
+      
     return loss
 
   def training_step(self, batch, batch_idx):
@@ -145,9 +160,10 @@ class CR_pl(LightningModule):
 
     # Model parameters
     parser.add_argument('--lam', default=1, type=float)
+    parser.add_argument('--lam2', default=100, type=float)
     parser.add_argument('--T', default=0.5, type=float)
     parser.add_argument('--lr', default=0.1, type=float)
-    parser.add_argument('--batch_size', default=512, type=int)
+    parser.add_argument('--batch_size', default=1024, type=int)
     parser.add_argument("--max_epochs", type=int, default=150)
     parser.add_argument('--optimizer', default='sgd', type=str)
     parser.add_argument('--num_workers', default=8, type=int)

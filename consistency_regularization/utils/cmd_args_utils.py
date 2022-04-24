@@ -51,8 +51,15 @@ def add_common_flags(parent_parser):
         action="store_true",
         help="Remove tensorboard and ckpt",
     )
-  
+    
+    parent_parser.add_argument(
+        '--alp',
+        action="store_true",
+        help="Use ALP",
+    )
     #model
+    parent_parser.add_argument('--grad_norm', action="store_true", 
+            help="Use grad_norm",)
     parent_parser.add_argument('--runpath', type=str, default="./runs", 
             help = "the path to store all models")
     parent_parser.add_argument('--model_dir', type=str, default="e1", 

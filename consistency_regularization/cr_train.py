@@ -12,6 +12,7 @@ from pytorch_lightning.strategies.ddp import DDPStrategy
 from pytorch_lightning.loggers import TensorBoardLogger 
 from utils import utils 
 from utils import cmd_args_utils
+import numpy as np 
 SEED = 2022
 seed_everything(SEED)
 
@@ -26,6 +27,8 @@ def main(hparams):
     Main training routine specific for this project
     :param hparams:
     """
+    torch.manual_seed(0)
+    np.random.seed(0) 
     # ------------------------
     # 1 INIT LIGHTNING MODEL
     # ------------------------
