@@ -5,6 +5,7 @@ from attack_utils import *
 from loss_utils import _jensen_shannon_div, ALP
 import torch
 import torch.nn as nn
+import torch.nn.functional as F 
 import torch.optim.lr_scheduler as lr_scheduler
 #import torch.optim.lr_scheduler import OneCycleLR, MultiStepLR
 from torch.utils.data import DataLoader
@@ -12,9 +13,13 @@ from pytorch_lightning import LightningModule, Trainer
 from autoattack import AutoAttack
 from robustbench.data import load_cifar10
 from utils import grad_norm
+from torch.optim.swa_utils import AveragedModel, SWALR
+from torch.optim.lr_scheduler import CosineAnnealingLR
+from utils import awp
+import copy 
 
 class CR_pl(LightningModule):
-  def __init__(self, hparams, backbone):
+  def __init__(self, hparams, backbone, **kwargs):
     super().__init__()
 
     self.args = hparams
@@ -24,7 +29,12 @@ class CR_pl(LightningModule):
     self.kwargs = {'pin_memory': hparams.pin_memory, 'num_workers': hparams.num_workers}
     self.train_set, self.test_set, self.image_size, self.n_classes = get_dataset('autoaug', True)
     self.adversary = attack_module(self.model, self.criterion)
-
+    if hparams.awp:
+      proxy = copy.deepcopy(self.model).half().to("cuda")
+      proxy_opt = torch.optim.SGD(proxy.parameters(), lr=0.01)
+      self.awp_adversary = awp.AdvWeightPerturb(proxy=proxy, 
+                proxy_optim=proxy_opt, 
+                gamma=1e-2)
     self.autoattack = AutoAttack(backbone, 
                   norm='Linf', eps=8/255, version='custom', 
                   attacks_to_run=['apgd-ce', 'apgd-dlr', 'apgd-t', 'fab-t'],
@@ -35,11 +45,17 @@ class CR_pl(LightningModule):
     out = self.model(x)
     return out
 
-  def _train(self, batch, stage, batch_idx):
+  def _train2(self, batch, stage, batch_idx=None, log=True):
     images, labels = batch
+    
     images_aug1, images_aug2 = images[0], images[1]
     images_pair = torch.cat([images_aug1, images_aug2], dim=0)  # 2B
     images_adv = self.adversary(images_pair, labels.repeat(2))
+    if self.hparams.awp:
+      self.awp = self.awp_adversary.calc_awp(model=self.model,
+                                inputs_adv=images_adv,
+                                targets=labels.repeat(2))
+      self.awp_adversary.perturb(self.model, self.awp)
     loss = 0
     if self.hparams.alp:
       all_imgs = torch.cat([images_pair, images_adv], 0)
@@ -62,22 +78,55 @@ class CR_pl(LightningModule):
     ### total loss ###
     loss = loss + loss_ce + loss_con
 
-    if stage:
-      self.log(f"{stage}/loss", loss, prog_bar=True)
-      #robust_accuracy_dict = self.eval_autoattack()
-      #print(robust_accuracy_dict)
-      if batch_idx % 100 == 0:
-        robust_accuracy_dict = self.eval_autoattack()
-        for key, val in robust_accuracy_dict.items():
-          self.log(f"Autoattack/{key}", val*100)
+    if log:
+      if stage:
+        self.log(f"{stage}/loss", loss, prog_bar=True)
+        #robust_accuracy_dict = self.eval_autoattack()
+        #print(robust_accuracy_dict)
+        if batch_idx % 100 == 0:
+          robust_accuracy_dict = self.eval_autoattack()
+          for key, val in robust_accuracy_dict.items():
+            self.log(f"Autoattack/{key}", val*100)
       
     return loss
+  
+  def _train(self, batch, stage, batch_idx=None, log=True):
+    images, labels = batch
+    
+    images_aug1, images_aug2 = images[0], images[1]
+    images_pair = torch.cat([images_aug1, images_aug2], dim=0)  # 2B
+    images_adv = self.adversary(images_pair, labels.repeat(2))
+    if self.hparams.awp:
+      self.awp = self.awp_adversary.calc_awp(model=self.model,
+                                inputs_adv=images_adv,
+                                targets=labels.repeat(2))
+    
+      self.awp_adversary.perturb(self.model, self.awp)
+    
+      
 
-  def training_step(self, batch, batch_idx):
-    loss = self._train(batch, "train", batch_idx)
+    outputs_adv = self.model(images_adv)
+
+    loss = self.criterion(outputs_adv, labels.repeat(2))
+
+
+    if log:
+      if stage:
+        self.log(f"{stage}/loss", loss, prog_bar=True)
+        #robust_accuracy_dict = self.eval_autoattack()
+        #print(robust_accuracy_dict)
+        if batch_idx % 100 == 0:
+          robust_accuracy_dict = self.eval_autoattack()
+          for key, val in robust_accuracy_dict.items():
+            self.log(f"Autoattack/{key}", val*100)
+      
+    return loss
+  
+  def training_step(self, batch, batch_idx, log=True):
+    loss = self._train(batch, "train", batch_idx, log)
     return loss 
 
-  def evaluate(self, batch, stage=None):
+  def evaluate(self, batch, stage=None, log=True):
     images, labels = batch
     images_aug1, images_aug2 = images[0], images[1]
     images_pair = torch.cat([images_aug1, images_aug2], dim=0)  # 2B
@@ -93,15 +142,19 @@ class CR_pl(LightningModule):
 
     ### total loss ###
     loss = loss_ce + loss_con
+    if log:
+      if stage:
+        self.log(f"{stage}_loss", loss, prog_bar=True)
+    else:
+      return loss 
 
-    if stage:
-      self.log(f"{stage}_loss", loss, prog_bar=True)
+  def validation_step(self, batch, batch_idx, log=True):
+    self.evaluate(batch, "val", log=log)
 
-  def validation_step(self, batch, batch_idx):
-    self.evaluate(batch, "val")
-
-  def test_step(self, batch, batch_idx):
-    self.evaluate(batch, "test")
+  def test_step(self, batch, batch_idx, log=True):
+    loss = self.evaluate(batch, "test", log=log)
+    if not log:
+      return loss
 
   def train_dataloader(self):
     trainloader = DataLoader(self.train_set, shuffle=True, batch_size=self.hparams.batch_size, **self.kwargs)
@@ -178,3 +231,9 @@ class CR_pl(LightningModule):
     self.model.train()
     return robust_accuracy_dict
 
+  def training_step_end(self, batch_parts):
+    if self.hparams.awp:
+      self.awp_adversary.restore(self.model, self.awp)
+    
+      
+  

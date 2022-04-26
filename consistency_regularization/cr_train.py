@@ -37,15 +37,16 @@ def main(hparams):
                          widen_factor=hparams.wide_factor,
                          use_sn=hparams.use_sn)
     #backbone = create_model()
-    
+  
     cr_pl = CR_pl(hparams, backbone)
-    
+   
     # ------------------------
     # 2 DEFINE CALLBACKS
     # ------------------------
     bar = TQDMProgressBar(refresh_rate=1, process_position=0)
-    #swa_callback = StochasticWeightAveraging(swa_epoch_start=0.8, swa_lrs=None, annealing_epochs=10, 
-        #annealing_strategy='cos', avg_fn=None, device=None)
+    if hparams.swa:
+      swa_callback = StochasticWeightAveraging(swa_epoch_start=0.8, swa_lrs=None, annealing_epochs=10, 
+        annealing_strategy='cos', avg_fn=None, device=None)
     runpath = "runs/"
     if hparams.restart:
       os.system(f"rm -rf {runpath + hparams.model_dir}")
@@ -58,7 +59,9 @@ def main(hparams):
         save_weights_only=False
         )
     #early_stop_callback = EarlyStopping(monitor="val_loss", min_delta=0.00, patience=5, verbose=False, mode="min")
-    
+    callbacks = [checkpoint_callback, bar]
+    if hparams.swa:
+      callbacks.append(swa_callback)
     # ------------------------
     # 3 INIT TRAINER
     # ------------------------
@@ -73,7 +76,7 @@ def main(hparams):
         max_epochs=hparams.max_epochs,
         #strategy=None,
         strategy=DDPStrategy(find_unused_parameters=False),
-        callbacks=[checkpoint_callback, bar],
+        callbacks=callbacks,
         logger=logger,
         )
 
