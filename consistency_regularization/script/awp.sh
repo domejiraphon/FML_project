@@ -17,7 +17,7 @@ unset XDG_RUNTIME_DIR
 if [ "$SLURM_JOBTMP" != "" ]; then
     export XDG_RUNTIME_DIR=$SLURM_JOBTMP
 fi
-
+iter=$1
 singularity exec --nv  --overlay /scratch/jy3694/torchenv.ext3:ro \
     /scratch/work/public/singularity/cuda11.3.0-cudnn8-devel-ubuntu20.04.sif \
-    /bin/bash -c "source /ext3/env.sh; python cr_train.py --model_dir awp --restart --awp"
+    /bin/bash -c "source /ext3/env.sh; python cr_train.py --model_dir awp_$iter --restart --awp --num_iter $iter"

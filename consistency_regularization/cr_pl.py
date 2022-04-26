@@ -34,7 +34,8 @@ class CR_pl(LightningModule):
       proxy_opt = torch.optim.SGD(proxy.parameters(), lr=0.01)
       self.awp_adversary = awp.AdvWeightPerturb(proxy=proxy, 
                 proxy_optim=proxy_opt, 
-                gamma=1e-2)
+                gamma=1e-2,
+                num_iter=hparams.num_iter)
     self.autoattack = AutoAttack(backbone, 
                   norm='Linf', eps=8/255, version='custom', 
                   attacks_to_run=['apgd-ce', 'apgd-dlr', 'apgd-t', 'fab-t'],
@@ -45,7 +46,7 @@ class CR_pl(LightningModule):
     out = self.model(x)
     return out
 
-  def _train2(self, batch, stage, batch_idx=None, log=True):
+  def _train(self, batch, stage, batch_idx=None, log=True):
     images, labels = batch
     
     images_aug1, images_aug2 = images[0], images[1]
@@ -90,7 +91,7 @@ class CR_pl(LightningModule):
       
     return loss
   
-  def _train(self, batch, stage, batch_idx=None, log=True):
+  def _train2(self, batch, stage, batch_idx=None, log=True):
     images, labels = batch
     
     images_aug1, images_aug2 = images[0], images[1]
@@ -217,6 +218,7 @@ class CR_pl(LightningModule):
     parser.add_argument('--T', default=0.5, type=float)
     parser.add_argument('--lr', default=0.1, type=float)
     parser.add_argument('--batch_size', default=1024, type=int)
+    parser.add_argument('--num_iter', default=1, type=int)
     parser.add_argument("--max_epochs", type=int, default=150)
     parser.add_argument('--optimizer', default='sgd', type=str)
     parser.add_argument('--num_workers', default=8, type=int)

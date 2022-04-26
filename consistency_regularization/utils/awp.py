@@ -27,21 +27,22 @@ def add_into_weights(model, diff, coeff=1.0):
 
 
 class AdvWeightPerturb(object):
-    def __init__(self, proxy, proxy_optim, gamma):
+    def __init__(self, proxy, proxy_optim, gamma, num_iter=1):
         super(AdvWeightPerturb, self).__init__()
         self.proxy = proxy
         self.proxy_optim = proxy_optim
         self.gamma = gamma
+        self.num_iter = num_iter
 
     def calc_awp(self, model, inputs_adv, targets):
         self.proxy.load_state_dict(model.state_dict())
         self.proxy.train()
-        
-        loss = - F.cross_entropy(self.proxy(inputs_adv), targets)
+        for i in range(self.num_iter):
+          loss = - F.cross_entropy(self.proxy(inputs_adv), targets)
 
-        self.proxy_optim.zero_grad()
-        loss.backward()
-        self.proxy_optim.step()
+          self.proxy_optim.zero_grad()
+          loss.backward()
+          self.proxy_optim.step()
 
         # the adversary weight perturb
         diff = diff_in_weights(model, self.proxy)
