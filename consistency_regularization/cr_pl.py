@@ -10,6 +10,8 @@ from torch.optim.lr_scheduler import OneCycleLR, MultiStepLR, CosineAnnealingLR
 from torch.utils.data import DataLoader
 from pytorch_lightning import LightningModule, Trainer
 from transformers import get_cosine_schedule_with_warmup
+import copy
+import awp
 
 class CR_pl(LightningModule):
   def __init__(self, hparams, backbone):
@@ -25,6 +27,14 @@ class CR_pl(LightningModule):
     
     # setup criterion
     self.criterion = nn.CrossEntropyLoss()
+
+    # use awp or not
+    if hparams.use_awp:
+      proxy = copy.deepcopy(self.model).half()
+      proxy_opt = torch.optim.SGD(proxy.parameters(), lr=0.01)
+      self.awp_adversary = awp.AdvWeightPerturb(proxy=proxy, 
+                proxy_optim=proxy_opt, 
+                gamma=1e-2)
 
     # setup dataset and adversary attack
     self.kwargs = {'pin_memory': hparams.pin_memory, 'num_workers': hparams.num_workers}
@@ -57,7 +67,13 @@ class CR_pl(LightningModule):
     else:
         with torch.enable_grad():
             images_adv = self.adversary(images_pair, labels.repeat(2))
-    
+
+    if stage == "train" and self.hparams.use_awp:
+        self.awp = self.awp_adversary.calc_awp(model=self.model,
+                                            inputs_adv=images_adv,
+                                            targets=labels.repeat(2))
+        self.awp_adversary.perturb(self.model, self.awp)
+ 
     # register hook to get intermediate output
     activation = {}
     def get_activation(name):
@@ -120,6 +136,10 @@ class CR_pl(LightningModule):
   def training_step(self, batch, batch_idx):
     loss = self._forward(batch, "train")
     return loss
+
+  def training_step_end(self, batch_parts):
+    if self.hparams.use_awp:
+        self.awp_adversary.restore(self.model, self.awp)
 
   def validation_step(self, batch, batch_idx):
     self._forward(batch, "val")
@@ -197,17 +217,18 @@ class CR_pl(LightningModule):
     parser = argparse.ArgumentParser(parents=[parent_parser])
 
     # Model parameters
-    parser.add_argument('--loss_func', choices=["JS", "MIN"], default="MIN", type=str)
-    parser.add_argument('--sim_coeff', default=15.0, type=float) 
-    parser.add_argument('--con_coeff', default=15.0, type=float)
+    parser.add_argument('--loss_func', choices=["JS", "MIN"], default="JS", type=str)
+    parser.add_argument('--sim_coeff', default=1.0, type=float) 
+    parser.add_argument('--con_coeff', default=1.0, type=float)
     parser.add_argument('--cov_coeff', default=1.0, type=float)
     parser.add_argument('--T', default=0.5, type=float)
     parser.add_argument('--lr', default=0.1, type=float)
     parser.add_argument('--embed_dim', default=640, type=int)
     parser.add_argument("--mlp", default="2048-2048-2048", type=str, help='Size and number of layers of the MLP expander head')
-    parser.add_argument('--batch_size', default=16, type=int)
+    parser.add_argument('--batch_size', default=512, type=int)
     parser.add_argument("--max_epochs", type=int, default=200)
     parser.add_argument("--extra_reg", choices=["cov"], type=str, default=None)
+    #parser.add_argument("--use_mixup", type=bool, default=False)
     parser.add_argument('--optimizer', choices=["adamw", "sgd"], default="sgd", type=str)
     parser.add_argument('--scheduler', choices=["cosine", "multistep"], default="multistep", type=str)
     parser.add_argument('--warmup', default=False, type=bool)

@@ -1,6 +1,6 @@
 import os
-import WideResNet
-from WideResNet import *
+import WideResNet_v2
+from WideResNet_v2 import *
 from cr_pl import *
 from vit_pytorch import ViT
 import torchvision
@@ -28,7 +28,10 @@ def main(hparams):
     # 1 INIT LIGHTNING MODEL
     # ------------------------
     if hparams.backbone_model == 'WResNet':
-        backbone = WideResNet(depth=hparams.net_depth, n_classes=hparams.num_classes, widen_factor=hparams.wide_factor)
+        backbone = WideResNet(depth=hparams.net_depth, 
+                            n_classes=hparams.num_classes, 
+                            widen_factor=hparams.wide_factor,
+                            use_sn=hparams.use_sn)
     elif hparams.backbone_model == 'ViT':
         backbone = ViT(image_size=32, patch_size=4, num_classes=hparams.num_classes, dim=768, depth=12,
                     heads=16, mlp_dim=1024, dropout=0.1, emb_dropout=0.1, pool='mean')
@@ -41,8 +44,9 @@ def main(hparams):
     # 2 DEFINE CALLBACKS
     # ------------------------
     bar = TQDMProgressBar(refresh_rate=1, process_position=0)
-    #swa_callback = StochasticWeightAveraging(swa_epoch_start=0.8, swa_lrs=None, annealing_epochs=10, 
-        #annealing_strategy='cos', avg_fn=None, device=None)
+    if hparams.use_swa:
+        swa_callback = StochasticWeightAveraging(swa_epoch_start=0.8, swa_lrs=None, annealing_epochs=10, 
+                                                annealing_strategy='cos', avg_fn=None)
     checkpoint_callback = ModelCheckpoint(
         save_top_k=1,
         verbose=True,
@@ -55,6 +59,9 @@ def main(hparams):
     # ------------------------
     # 3 INIT TRAINER
     # ------------------------
+    callbacks = [checkpoint_callback, bar]
+    if hparams.use_swa:
+        callbacks.append(swa_callback)
     trainer = pl.Trainer(
         progress_bar_refresh_rate=1,
         gpus=hparams.gpus,
@@ -63,13 +70,16 @@ def main(hparams):
         max_epochs=hparams.max_epochs,
         #strategy=None,
         strategy=DDPStrategy(find_unused_parameters=False),
-        callbacks=[checkpoint_callback, bar]
+        callbacks=callbacks
         )
 
     # ------------------------
     # 4 START TRAINING
     # ------------------------
     trainer.fit(cr_pl)
+    if hparams.use_swa:
+      path = os.path.join(hparams.runpath, hparams.model_dir, "swa.ckpt")
+      trainer.save_checkpoint(path)
 
 if __name__ == '__main__':
     # ------------------------
@@ -87,12 +97,14 @@ if __name__ == '__main__':
         default=1,
         help='how many gpus'
     )
+
     parent_parser.add_argument(
         '--num_nodes',
         type=int,
         default=1,
         help='how many nodes'
     )
+
     parent_parser.add_argument(
         '--precision',
         type=int,
@@ -116,6 +128,24 @@ if __name__ == '__main__':
     )
 
     parent_parser.add_argument(
+        '--use_sn', 
+        action='store_true',
+        help="Use Spectral Normalization",
+    )
+
+    parent_parser.add_argument(
+        '--use_awp', 
+        action='store_true', 
+        help="Use Stochastic Weight Perturbation",
+    )
+
+    parent_parser.add_argument(
+        '--use_swa', 
+        action='store_true',
+        help="Use Stochastic Weighted Average",
+    )
+
+    parent_parser.add_argument(
         '--net_depth',
         type=int,
         default=34,
@@ -127,6 +157,20 @@ if __name__ == '__main__':
         type=int,
         default=10,
         help='wide resenet wide factor'
+    )
+
+    parent_parser.add_argument(
+        '--runpath', 
+        type=str, 
+        default="./runs", 
+        help = "the path to store all models"
+    )
+
+    parent_parser.add_argument(
+        '--model_dir', 
+        type=str,
+        default="e1",
+        help = "the path to store model directory"
     )
 
     # each LightningModule defines arguments relevant to it
