@@ -12,6 +12,7 @@ from pytorch_lightning import LightningModule, Trainer
 from transformers import get_cosine_schedule_with_warmup
 import copy 
 import awp 
+import pandas as pd 
 
 class CR_pl(LightningModule):
   def __init__(self, hparams, backbone):
@@ -37,6 +38,7 @@ class CR_pl(LightningModule):
     self.kwargs = {'pin_memory': hparams.pin_memory, 'num_workers': hparams.num_workers}
     self.train_set, self.test_set, self.image_size, self.n_classes = get_dataset('autoaug', True)
     self.adversary = attack_module(self.model, self.criterion)
+    self.log_dict = {"step": [], "loss ce": [], "loss con": []}
 
   def Projector(self, embedding):
     mlp_spec = f"{embedding}-{self.hparams.mlp}"
@@ -59,6 +61,7 @@ class CR_pl(LightningModule):
     images_pair = torch.cat([images_aug1, images_aug2], dim=0)  # 2B
    
     #print(images_pair.shape) 
+    
     if stage == "train":
         images_adv = self.adversary(images_pair, labels.repeat(2))
     else:
@@ -123,16 +126,20 @@ class CR_pl(LightningModule):
         self.log(f"{stage}_loss", loss, prog_bar=True)
         self.log(f"{stage}_loss_con", loss_con, prog_bar=True)
         self.log(f"{stage}_loss_sim", loss_ce, prog_bar=True)
-
+    if stage == "val":
+      self.log_info(loss_ce, loss_con)
+      
     return loss
+   
 
   def training_step(self, batch, batch_idx):
     loss = self._forward(batch, "train")
     return loss
 
   def validation_step(self, batch, batch_idx):
+    self.log_each_val = {"loss ce": [], "loss con": []}
     self._forward(batch, "val")
-
+    
   def test_step(self, batch, batch_idx):
     self._forward(batch, "test")
 
@@ -223,7 +230,27 @@ class CR_pl(LightningModule):
     parser.add_argument('--num_workers', default=8, type=int)
     parser.add_argument('--pin_memory', default=True, type=bool)
     return parser
+
   def training_step_end(self, batch_parts):
     if self.hparams.awp:
       self.awp_adversary.restore(self.model, self.awp)
-   
+  
+  def validation_epoch_end(self, batch_parts):
+
+    mean_ce = torch.tensor(self.log_each_val["loss ce"]).mean()
+    mean_con = torch.tensor(self.log_each_val["loss con"]).mean()
+
+    self.log_dict["step"].append(self.global_step)
+    self.log_dict["loss ce"].append(mean_ce.item())
+    self.log_dict["loss con"].append(mean_con.item())
+
+  def log_info(self, loss_ce=None, loss_con=None, write_pd=False, dir=None):
+    if write_pd:
+      df = pd.DataFrame.from_dict(self.log_dict)
+      df.to_csv(os.path.join(dir, 'loss.csv'), index=False)
+      return 
+  
+    self.log_each_val["loss ce"].append(loss_ce)
+    self.log_each_val["loss con"].append(loss_con)
+    
+    

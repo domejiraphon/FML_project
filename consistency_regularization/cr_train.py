@@ -49,7 +49,7 @@ def main(hparams):
       swa_callback = StochasticWeightAveraging(swa_epoch_start=0.8, swa_lrs=None, annealing_epochs=10, 
         annealing_strategy='cos', avg_fn=None, device=None)
     if hparams.restart:
-      os.system(f"rm -rf {hparams.runpath + hparams.model_dir}")
+      os.system(f"rm -rf {os.path.join(hparams.runpath, hparams.model_dir)}")
 
     logger = TensorBoardLogger(save_dir=hparams.runpath,
                     name=hparams.model_dir,
@@ -86,6 +86,8 @@ def main(hparams):
     # 4 START TRAINING
     # ------------------------
     trainer.fit(cr_pl)
+    #log loss
+    cr_pl.log_info(write_pd=True, dir=os.path.join(hparams.runpath, hparams.model_dir))
     if hparams.swa:
       path = os.path.join(hparams.runpath, hparams.model_dir, "swa.ckpt")
       trainer.save_checkpoint(path)

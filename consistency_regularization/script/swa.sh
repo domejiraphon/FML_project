@@ -3,7 +3,7 @@
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=30GB
-#SBATCH --gres=gpu:1
+#SBATCH --gres=gpu:rtx8000:1
 #SBATCH --time=48:00:00
 ##SBATCH --mail-type=BEGIN
 ##SBATCH --mail-user=jy3694@nyu.edu
