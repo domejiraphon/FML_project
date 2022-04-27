@@ -9,6 +9,7 @@ from pytorch_lightning.callbacks import StochasticWeightAveraging, TQDMProgressB
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 from pytorch_lightning.utilities.seed import seed_everything
 from pytorch_lightning.strategies.ddp import DDPStrategy
+from pytorch_lightning.loggers import TensorBoardLogger 
 
 SEED = 2022
 seed_everything(SEED)
@@ -28,7 +29,10 @@ def main(hparams):
     # 1 INIT LIGHTNING MODEL
     # ------------------------
     if hparams.backbone_model == 'WResNet':
-        backbone = WideResNet(depth=hparams.net_depth, n_classes=hparams.num_classes, widen_factor=hparams.wide_factor)
+        backbone = WideResNet(depth=hparams.net_depth, 
+                         n_classes=hparams.num_classes, 
+                         widen_factor=hparams.wide_factor,
+                         use_sn=hparams.use_sn)
     elif hparams.backbone_model == 'ViT':
         backbone = ViT(image_size=32, patch_size=4, num_classes=hparams.num_classes, dim=768, depth=12,
                     heads=16, mlp_dim=1024, dropout=0.1, emb_dropout=0.1, pool='mean')
@@ -41,9 +45,17 @@ def main(hparams):
     # 2 DEFINE CALLBACKS
     # ------------------------
     bar = TQDMProgressBar(refresh_rate=1, process_position=0)
-    #swa_callback = StochasticWeightAveraging(swa_epoch_start=0.8, swa_lrs=None, annealing_epochs=10, 
-        #annealing_strategy='cos', avg_fn=None, device=None)
+    if hparams.swa:
+      swa_callback = StochasticWeightAveraging(swa_epoch_start=0.8, swa_lrs=None, annealing_epochs=10, 
+        annealing_strategy='cos', avg_fn=None, device=None)
+    if hparams.restart:
+      os.system(f"rm -rf {hparams.runpath + hparams.model_dir}")
+
+    logger = TensorBoardLogger(save_dir=hparams.runpath,
+                    name=hparams.model_dir,
+                  )
     checkpoint_callback = ModelCheckpoint(
+        dirpath=os.path.join(hparams.runpath, hparams.model_dir), 
         save_top_k=1,
         verbose=True,
         monitor='val_loss',
@@ -55,6 +67,9 @@ def main(hparams):
     # ------------------------
     # 3 INIT TRAINER
     # ------------------------
+    callbacks = [checkpoint_callback, bar]
+    if hparams.swa:
+      callbacks.append(swa_callback)
     trainer = pl.Trainer(
         progress_bar_refresh_rate=1,
         gpus=hparams.gpus,
@@ -63,13 +78,17 @@ def main(hparams):
         max_epochs=hparams.max_epochs,
         #strategy=None,
         strategy=DDPStrategy(find_unused_parameters=False),
-        callbacks=[checkpoint_callback, bar]
+        callbacks=callbacks,
+        logger=logger,
         )
 
     # ------------------------
     # 4 START TRAINING
     # ------------------------
     trainer.fit(cr_pl)
+    if hparams.swa:
+      path = os.path.join(hparams.runpath, hparams.model_dir, "swa.ckpt")
+      trainer.save_checkpoint(path)
 
 if __name__ == '__main__':
     # ------------------------
@@ -129,6 +148,43 @@ if __name__ == '__main__':
         help='wide resenet wide factor'
     )
 
+    parent_parser.add_argument(
+        '--use_sn', 
+        action="store_true", 
+        help="Use Spectral Normalization",
+    )
+
+    parent_parser.add_argument(
+        '--awp', 
+        action="store_true", 
+        help="Use weight perturbation",
+    )
+
+    parent_parser.add_argument(
+        '--swa', 
+        action="store_true", 
+        help="Use Stochastic weighted average",
+    )
+
+    parent_parser.add_argument(
+        '--runpath', 
+        type=str, 
+        default="./runs", 
+        help = "the path to store all models"
+    )
+
+    parent_parser.add_argument(
+        '--restart', 
+        action="store_true", 
+        help = "restart the runs"
+    )
+
+    parent_parser.add_argument(
+        '--model_dir', 
+        type=str,
+        default="e1", 
+        help = "the path to store model directory"
+    )
     # each LightningModule defines arguments relevant to it
     parser = CR_pl.add_model_specific_args(parent_parser, root_dir)
     hyperparams = parser.parse_args()
