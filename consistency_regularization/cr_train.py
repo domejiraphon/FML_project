@@ -1,9 +1,10 @@
 import os
 import WideResNet
-import pytorch_lightning as pl
-import torchvision
 from WideResNet import *
 from cr_pl import *
+from vit_pytorch import ViT
+import torchvision
+import pytorch_lightning as pl
 from pytorch_lightning.callbacks import StochasticWeightAveraging, TQDMProgressBar, ModelCheckpoint
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 from pytorch_lightning.utilities.seed import seed_everything
@@ -26,7 +27,13 @@ def main(hparams):
     # ------------------------
     # 1 INIT LIGHTNING MODEL
     # ------------------------
-    backbone = WideResNet(depth=hparams.net_depth, n_classes=hparams.num_classes, widen_factor=hparams.wide_factor)
+    if hparams.backbone_model == 'WResNet':
+        backbone = WideResNet(depth=hparams.net_depth, n_classes=hparams.num_classes, widen_factor=hparams.wide_factor)
+    elif hparams.backbone_model == 'ViT':
+        backbone = ViT(image_size=32, patch_size=4, num_classes=hparams.num_classes, dim=768, depth=12,
+                    heads=16, mlp_dim=1024, dropout=0.1, emb_dropout=0.1, pool='mean')
+    else:
+        raise NotImplementedError()
     #backbone = create_model()
     cr_pl = CR_pl(hparams, backbone)
     
@@ -98,6 +105,14 @@ if __name__ == '__main__':
         type=int,
         default=10,
         help='number of classes for the dataset'
+    )
+    
+    parent_parser.add_argument(
+        '--backbone_model', 
+        choices=["ViT", "WResNet"],
+        default="WResNet", 
+        type=str,
+        help='name of backbone model'
     )
 
     parent_parser.add_argument(

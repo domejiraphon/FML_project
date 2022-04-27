@@ -106,11 +106,13 @@ class WideResNet(BaseModel):
 
     def penultimate(self, x):
         out = self.conv1(x)
+        #print(out.shape)
         out = self.block1(out)
         out = self.block2(out)
         out = self.block3(out)
         out = self.relu(self.bn1(out))
         out = F.avg_pool2d(out, 8)
         out = out.view(out.size(0), -1)
+        #print(f"out: {out.shape}")
         return out
         

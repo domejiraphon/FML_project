@@ -1,5 +1,6 @@
 import cr_pl
 from cr_pl import *
+from vit_pytorch import ViT
 import WideResNet
 from WideResNet import *
 from robustbench.data import load_cifar10
@@ -19,19 +20,25 @@ def main(hparams):
     # ------------------------
     # 1 INIT LIGHTNING MODEL
     # ------------------------
-    backbone = WideResNet(depth=hparams.net_depth, n_classes=hparams.num_classes, widen_factor=hparams.wide_factor)
+    if hparams.backbone_model == 'WResNet':
+        backbone = WideResNet(depth=hparams.net_depth, n_classes=hparams.num_classes, widen_factor=hparams.wide_factor)
+    elif hparams.backbone_model == 'ViT':
+        backbone = ViT(image_size=32, patch_size=4, num_classes=hparams.num_classes, dim=768, depth=12,
+                    heads=16, mlp_dim=1024, dropout=0.1, emb_dropout=0.1, pool='mean')
+    else:
+        raise NotImplementedError()
     #backbone = create_model()
     model = CR_pl(hparams, backbone)
 
-    x_test, y_test = load_cifar10(n_examples=100)
+    x_test, y_test = load_cifar10(n_examples=1000)
     print("Test mode")
     # Test the model from loaded checkpoint
     checkpoint = torch.load(hparams.load_path)
-    model.load_state_dict(checkpoint['state_dict'])
+    model.load_state_dict(checkpoint['state_dict'], strict=False)
     backbone = model.model.cuda()
     backbone.eval()
-    #adversary = AutoAttack(model, norm='Linf', eps=8/255)
-    adversary = AutoAttack(backbone, norm='Linf', eps=8/255, version='custom', attacks_to_run=['apgd-ce', 'apgd-dlr'])
+    adversary = AutoAttack(model, norm='Linf', eps=8/255)
+    #adversary = AutoAttack(backbone, norm='Linf', eps=8/255, version='custom', attacks_to_run=['apgd-ce', 'apgd-dlr'])
     adversary.apgd.n_restarts = 1
     x_adv = adversary.run_standard_evaluation(x_test.cuda(), y_test.cuda())
 
@@ -69,6 +76,14 @@ if __name__ == '__main__':
         type=int,
         default=10,
         help='number of classes for the dataset'
+    )
+
+    parent_parser.add_argument(
+        '--backbone_model',
+        choices=["WResNet", "ViT"],
+        type=str,
+        default="WResNet",
+        help='backbone model'
     )
 
     parent_parser.add_argument(

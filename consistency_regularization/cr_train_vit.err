@@ -1,0 +1,69 @@
+Global seed set to 2022
+Using 16bit native Automatic Mixed Precision (AMP)
+/home/huangh13/.local/lib/python3.8/site-packages/pytorch_lightning/trainer/connectors/callback_connector.py:96: LightningDeprecationWarning: Setting `Trainer(progress_bar_refresh_rate=1)` is deprecated in v1.5 and will be removed in v1.7. Please pass `pytorch_lightning.callbacks.progress.TQDMProgressBar` with `refresh_rate` directly to the Trainer's `callbacks` argument instead. Or, to disable the progress bar pass `enable_progress_bar = False` to the Trainer.
+  rank_zero_deprecation(
+GPU available: True, used: True
+TPU available: False, using: 0 TPU cores
+IPU available: False, using: 0 IPUs
+HPU available: False, using: 0 HPUs
+Global seed set to 2022
+Initializing distributed: GLOBAL_RANK: 0, MEMBER: 1/2
+Global seed set to 2022
+Global seed set to 2022
+Initializing distributed: GLOBAL_RANK: 1, MEMBER: 2/2
+----------------------------------------------------------------------------------------------------
+distributed_backend=nccl
+All distributed processes registered. Starting with 2 processes
+----------------------------------------------------------------------------------------------------
+
+LOCAL_RANK: 1 - CUDA_VISIBLE_DEVICES: [0,1]
+LOCAL_RANK: 0 - CUDA_VISIBLE_DEVICES: [0,1]
+
+  | Name      | Type             | Params
+-----------------------------------------------
+0 | model     | ViT              | 56.8 M
+1 | criterion | CrossEntropyLoss | 0     
+-----------------------------------------------
+56.8 M    Trainable params
+0         Non-trainable params
+56.8 M    Total params
+113.576   Total estimated model params size (MB)
+Epoch 0, global step 782: 'val_loss' reached 2.68865 (best 2.68865), saving model to '/gpfs/data/denizlab/Users/hh2740/FML_project/consistency_regularization/lightning_logs/version_5/checkpoints/epoch=0-step=782.ckpt' as top 1
+Epoch 1, global step 1564: 'val_loss' reached 2.35023 (best 2.35023), saving model to '/gpfs/data/denizlab/Users/hh2740/FML_project/consistency_regularization/lightning_logs/version_5/checkpoints/epoch=1-step=1564.ckpt' as top 1
+Epoch 2, global step 2346: 'val_loss' reached 2.28457 (best 2.28457), saving model to '/gpfs/data/denizlab/Users/hh2740/FML_project/consistency_regularization/lightning_logs/version_5/checkpoints/epoch=2-step=2346.ckpt' as top 1
+Epoch 3, global step 3128: 'val_loss' reached 2.28457 (best 2.28457), saving model to '/gpfs/data/denizlab/Users/hh2740/FML_project/consistency_regularization/lightning_logs/version_5/checkpoints/epoch=3-step=3128.ckpt' as top 1
+Epoch 4, global step 3910: 'val_loss' reached 2.26709 (best 2.26709), saving model to '/gpfs/data/denizlab/Users/hh2740/FML_project/consistency_regularization/lightning_logs/version_5/checkpoints/epoch=4-step=3910.ckpt' as top 1
+Epoch 5, global step 4692: 'val_loss' was not in top 1
+Epoch 6, global step 5474: 'val_loss' reached 2.25562 (best 2.25562), saving model to '/gpfs/data/denizlab/Users/hh2740/FML_project/consistency_regularization/lightning_logs/version_5/checkpoints/epoch=6-step=5474.ckpt' as top 1
+Epoch 7, global step 6256: 'val_loss' reached 2.23203 (best 2.23203), saving model to '/gpfs/data/denizlab/Users/hh2740/FML_project/consistency_regularization/lightning_logs/version_5/checkpoints/epoch=7-step=6256.ckpt' as top 1
+Epoch 8, global step 7038: 'val_loss' reached 2.21241 (best 2.21241), saving model to '/gpfs/data/denizlab/Users/hh2740/FML_project/consistency_regularization/lightning_logs/version_5/checkpoints/epoch=8-step=7038.ckpt' as top 1
+Epoch 9, global step 7820: 'val_loss' was not in top 1
+Epoch 10, global step 8602: 'val_loss' was not in top 1
+Epoch 11, global step 9384: 'val_loss' was not in top 1
+Epoch 12, global step 10166: 'val_loss' reached 2.16804 (best 2.16804), saving model to '/gpfs/data/denizlab/Users/hh2740/FML_project/consistency_regularization/lightning_logs/version_5/checkpoints/epoch=12-step=10166.ckpt' as top 1
+Epoch 13, global step 10948: 'val_loss' reached 2.16537 (best 2.16537), saving model to '/gpfs/data/denizlab/Users/hh2740/FML_project/consistency_regularization/lightning_logs/version_5/checkpoints/epoch=13-step=10948.ckpt' as top 1
+Epoch 14, global step 11730: 'val_loss' reached 2.15847 (best 2.15847), saving model to '/gpfs/data/denizlab/Users/hh2740/FML_project/consistency_regularization/lightning_logs/version_5/checkpoints/epoch=14-step=11730.ckpt' as top 1
+Epoch 15, global step 12512: 'val_loss' reached 2.13187 (best 2.13187), saving model to '/gpfs/data/denizlab/Users/hh2740/FML_project/consistency_regularization/lightning_logs/version_5/checkpoints/epoch=15-step=12512.ckpt' as top 1
+Epoch 16, global step 13294: 'val_loss' was not in top 1
+Epoch 17, global step 14076: 'val_loss' was not in top 1
+Epoch 18, global step 14858: 'val_loss' was not in top 1
+Epoch 19, global step 15640: 'val_loss' was not in top 1
+Epoch 20, global step 16422: 'val_loss' was not in top 1
+Epoch 21, global step 17204: 'val_loss' was not in top 1
+Epoch 22, global step 17986: 'val_loss' was not in top 1
+Epoch 23, global step 18768: 'val_loss' was not in top 1
+Epoch 24, global step 19550: 'val_loss' was not in top 1
+Epoch 25, global step 20332: 'val_loss' was not in top 1
+Epoch 26, global step 21114: 'val_loss' was not in top 1
+Epoch 27, global step 21896: 'val_loss' was not in top 1
+Epoch 28, global step 22678: 'val_loss' was not in top 1
+Epoch 29, global step 23460: 'val_loss' was not in top 1
+Epoch 30, global step 24242: 'val_loss' was not in top 1
+Epoch 31, global step 25024: 'val_loss' was not in top 1
+Epoch 32, global step 25806: 'val_loss' was not in top 1
+Epoch 33, global step 26588: 'val_loss' was not in top 1
+Epoch 34, global step 27370: 'val_loss' was not in top 1
+Epoch 35, global step 28152: 'val_loss' was not in top 1
+Epoch 36, global step 28934: 'val_loss' was not in top 1
+/home/huangh13/.local/lib/python3.8/site-packages/pytorch_lightning/trainer/trainer.py:727: UserWarning: Detected KeyboardInterrupt, attempting graceful shutdown...
+  rank_zero_warn("Detected KeyboardInterrupt, attempting graceful shutdown...")

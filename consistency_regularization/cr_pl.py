@@ -2,12 +2,14 @@ import argparse
 from autoaugment import *
 from dataset_utils import *
 from attack_utils import *
-from loss_utils import _jensen_shannon_div
+from loss_utils import off_diagonal, _jensen_shannon_div, _H_min_div 
 import torch
 import torch.nn as nn
-from torch.optim.lr_scheduler import OneCycleLR, MultiStepLR
+import torch.nn.functional as F
+from torch.optim.lr_scheduler import OneCycleLR, MultiStepLR, CosineAnnealingLR
 from torch.utils.data import DataLoader
 from pytorch_lightning import LightningModule, Trainer
+from transformers import get_cosine_schedule_with_warmup
 
 class CR_pl(LightningModule):
   def __init__(self, hparams, backbone):
@@ -15,69 +17,117 @@ class CR_pl(LightningModule):
 
     self.args = hparams
     self.hparams.update(vars(hparams))
+    
+    # setup model
     self.model = backbone
+    if hparams.extra_reg != None:
+        self.projector = self.Projector(hparams.embed_dim)
+    
+    # setup criterion
     self.criterion = nn.CrossEntropyLoss()
+
+    # setup dataset and adversary attack
     self.kwargs = {'pin_memory': hparams.pin_memory, 'num_workers': hparams.num_workers}
     self.train_set, self.test_set, self.image_size, self.n_classes = get_dataset('autoaug', True)
     self.adversary = attack_module(self.model, self.criterion)
+
+  def Projector(self, embedding):
+    mlp_spec = f"{embedding}-{self.hparams.mlp}"
+    layers = []
+    f = list(map(int, mlp_spec.split("-")))
+    for i in range(len(f) - 2):
+        layers.append(nn.Linear(f[i], f[i + 1]))
+        layers.append(nn.BatchNorm1d(f[i + 1]))
+        layers.append(nn.ReLU(True))
+    layers.append(nn.Linear(f[-2], f[-1], bias=False))
+    return nn.Sequential(*layers)
 
   def forward(self, x):
     out = self.model(x)
     return out
 
-  def _train(self, batch, stage):
+  def _forward(self, batch, stage):
     images, labels = batch
     images_aug1, images_aug2 = images[0], images[1]
     images_pair = torch.cat([images_aug1, images_aug2], dim=0)  # 2B
-    images_adv = self.adversary(images_pair, labels.repeat(2))
-
-    outputs_adv = self(images_adv)
+   
+    #print(images_pair.shape) 
+    if stage == "train":
+        images_adv = self.adversary(images_pair, labels.repeat(2))
+    else:
+        with torch.enable_grad():
+            images_adv = self.adversary(images_pair, labels.repeat(2))
+    
+    # register hook to get intermediate output
+    activation = {}
+    def get_activation(name):
+        def hook(model, input, output):
+            activation[name] = output
+        return hook
+    self.model.relu.register_forward_hook(get_activation('penultimate'))
+    # get original output
+    outputs_adv = self.model(images_adv)
+    # get latent
+    outputs_latent = activation['penultimate']
+    outputs_latent = F.avg_pool2d(outputs_latent, 8)
+    outputs_latent = outputs_latent.view(outputs_latent.size(0), -1)
+    #print(f"outputs_adv: {outputs_adv.shape}")
+    #print(f"outputs_latent: {outputs_latent.shape}")
     loss_ce = self.criterion(outputs_adv, labels.repeat(2))
 
     ### consistency regularization ###
     outputs_adv1, outputs_adv2 = outputs_adv.chunk(2)
-    loss_con = self.hparams.lam * _jensen_shannon_div(outputs_adv1, outputs_adv2, self.hparams.T)
+    #print(f"outputs_adv1.shape: {outputs_adv1.shape}, outputs_adv2.shape: {outputs_adv2.shape}")
+    if self.hparams.loss_func == 'JS':
+        loss_con = self.hparams.con_coeff * _jensen_shannon_div(outputs_adv1, outputs_adv2, self.hparams.T)
+    elif self.hparams.loss_func == 'MIN':
+        loss_con = self.hparams.con_coeff * _H_min_div(outputs_adv1, outputs_adv2, self.hparams.T) 
+    else:
+        raise NotImplementedError() 
 
+    # calculate covariance regularization by projecting laten
+    # representation with a given projector
+    if self.hparams.extra_reg == 'cov':
+        num_features = int(self.hparams.mlp.split("-")[-1])
+        #self.projector = self.Projector(outputs_latent.shape[1])
+        outputs_latent1, outputs_latent2 = outputs_latent.chunk(2)
+        outputs_latent1, outputs_latent2 = self.projector(outputs_latent1), self.projector(outputs_latent2)
+        cov_1 = (outputs_latent1.T @ outputs_latent1) / (self.hparams.batch_size - 1)
+        cov_2 = (outputs_latent2.T @ outputs_latent2) / (self.hparams.batch_size - 1)
+        loss_cov = off_diagonal(cov_1).pow_(2).sum().div(num_features) + \
+                off_diagonal(cov_2).pow_(2).sum().div(num_features)
+        #print(f"loss_cov before: {loss_cov}") 
+        loss_cov *= self.hparams.cov_coeff
+        #print(f"loss_cov after: {loss_cov}")
+        #print(f"loss_con: {loss_con}")
+        if stage:
+            self.log(f"{stage}_loss_cov", loss_cov, prog_bar=True)
+    else:
+        loss_cov = 0
     ### total loss ###
-    loss = loss_ce + loss_con
+    loss_ce *= self.hparams.sim_coeff
+    loss = loss_ce + loss_con + loss_cov
 
     if stage:
-      self.log(f"{stage}_loss", loss, prog_bar=True)
-    
+        self.log(f"{stage}_loss", loss, prog_bar=True)
+        self.log(f"{stage}_loss_con", loss_con, prog_bar=True)
+        self.log(f"{stage}_loss_sim", loss_ce, prog_bar=True)
+
     return loss
 
   def training_step(self, batch, batch_idx):
-    loss = self._train(batch, "train")
+    loss = self._forward(batch, "train")
     return loss
 
-  def evaluate(self, batch, stage=None):
-    images, labels = batch
-    images_aug1, images_aug2 = images[0], images[1]
-    images_pair = torch.cat([images_aug1, images_aug2], dim=0)  # 2B
-    with torch.enable_grad():
-      images_adv = self.adversary(images_pair, labels.repeat(2))
-
-    outputs_adv = self(images_adv)
-    loss_ce = self.criterion(outputs_adv, labels.repeat(2))
-
-    ### consistency regularization ###
-    outputs_adv1, outputs_adv2 = outputs_adv.chunk(2)
-    loss_con = self.hparams.lam * _jensen_shannon_div(outputs_adv1, outputs_adv2, self.hparams.T)
-
-    ### total loss ###
-    loss = loss_ce + loss_con
-
-    if stage:
-      self.log(f"{stage}_loss", loss, prog_bar=True)
-
   def validation_step(self, batch, batch_idx):
-    self.evaluate(batch, "val")
+    self._forward(batch, "val")
 
   def test_step(self, batch, batch_idx):
-    self.evaluate(batch, "test")
+    self._forward(batch, "test")
 
   def train_dataloader(self):
     trainloader = DataLoader(self.train_set, shuffle=True, batch_size=self.hparams.batch_size, **self.kwargs)
+    self.train_len = len(trainloader)
     # imgs, labels = next(iter(a))
     # print(f"aa: {imgs[0].shape}")
     return trainloader
@@ -106,11 +156,25 @@ class CR_pl(LightningModule):
         )
     else:
         raise NotImplementedError()
-
+    
+    tb_size = self.hparams.batch_size * max(1, self.trainer.num_devices)
+    ab_size = self.trainer.accumulate_grad_batches * float(self.trainer.max_epochs)
+    self.total_steps = (len(self.train_set) // tb_size) // ab_size
+    self.warmup_steps = 0.06 * self.total_steps
+    
     #steps_per_epoch = (int)(45000 // self.hparams.batch_size)
-    lr_decay_gamma = 0.1
-    milestones = [int(0.5 * self.hparams.max_epochs), int(0.75 * self.hparams.max_epochs)]
-    scheduler = MultiStepLR(optimizer, gamma=lr_decay_gamma, milestones=milestones)
+    if self.hparams.scheduler=="multistep":
+        lr_decay_gamma = 0.1
+        milestones = [int(0.5 * self.hparams.max_epochs), int(0.75 * self.hparams.max_epochs)]
+        scheduler = MultiStepLR(optimizer, gamma=lr_decay_gamma, milestones=milestones)
+    elif self.hparams.scheduler=="cosine":
+        scheduler = get_cosine_schedule_with_warmup(optimizer,
+                                                    num_warmup_steps=self.warmup_steps,
+                                                    num_training_steps=self.total_steps,
+                                                )
+    else:
+        raise NotImplementedError()
+    
     # scheduler_dict = {
     #     "scheduler": OneCycleLR(
     #         optimizer,
@@ -131,12 +195,20 @@ class CR_pl(LightningModule):
     parser = argparse.ArgumentParser(parents=[parent_parser])
 
     # Model parameters
-    parser.add_argument('--lam', default=1, type=float)
+    parser.add_argument('--loss_func', choices=["JS", "MIN"], default="MIN", type=str)
+    parser.add_argument('--sim_coeff', default=15.0, type=float) 
+    parser.add_argument('--con_coeff', default=15.0, type=float)
+    parser.add_argument('--cov_coeff', default=1.0, type=float)
     parser.add_argument('--T', default=0.5, type=float)
     parser.add_argument('--lr', default=0.1, type=float)
+    parser.add_argument('--embed_dim', default=640, type=int)
+    parser.add_argument("--mlp", default="2048-2048-2048", type=str, help='Size and number of layers of the MLP expander head')
     parser.add_argument('--batch_size', default=16, type=int)
-    parser.add_argument("--max_epochs", type=int, default=150)
-    parser.add_argument('--optimizer', default='sgd', type=str)
+    parser.add_argument("--max_epochs", type=int, default=200)
+    parser.add_argument("--extra_reg", choices=["cov"], type=str, default=None)
+    parser.add_argument('--optimizer', choices=["adamw", "sgd"], default="sgd", type=str)
+    parser.add_argument('--scheduler', choices=["cosine", "multistep"], default="multistep", type=str)
+    parser.add_argument('--warmup', default=False, type=bool)
     parser.add_argument('--num_workers', default=8, type=int)
     parser.add_argument('--pin_memory', default=True, type=bool)
     return parser
