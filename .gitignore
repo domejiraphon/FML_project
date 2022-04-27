@@ -130,3 +130,6 @@ dmypy.json
 .pyre/
 
 lightning_logs/
+
+*.out
+*.err
