@@ -17,6 +17,7 @@ from torch.optim.swa_utils import AveragedModel, SWALR
 from torch.optim.lr_scheduler import CosineAnnealingLR
 from utils import awp
 import copy 
+from custom_attacks import iterative_projected_gradient
 
 class CR_pl(LightningModule):
   def __init__(self, hparams, backbone, **kwargs):
@@ -28,7 +29,10 @@ class CR_pl(LightningModule):
     self.criterion = nn.CrossEntropyLoss()
     self.kwargs = {'pin_memory': hparams.pin_memory, 'num_workers': hparams.num_workers}
     self.train_set, self.test_set, self.image_size, self.n_classes = get_dataset('autoaug', True)
-    self.adversary = attack_module(self.model, self.criterion)
+    if hparams.custom_awp:
+      self.adversary = custom_attack_module(self.model, self.criterion)
+    else:
+      self.adversary = attack_module(self.model, self.criterion)
     if hparams.awp:
       proxy = copy.deepcopy(self.model).half().to("cuda")
       proxy_opt = torch.optim.SGD(proxy.parameters(), lr=0.01)
@@ -51,7 +55,12 @@ class CR_pl(LightningModule):
     
     images_aug1, images_aug2 = images[0], images[1]
     images_pair = torch.cat([images_aug1, images_aug2], dim=0)  # 2B
-    images_adv = self.adversary(images_pair, labels.repeat(2))
+    if self.hparams.custom_awp:
+      images_adv, self.awp = self.adversary(images_pair, labels.repeat(2))
+      iterative_projected_gradient.add_into_weights(self.model, 
+            self.awp, coeff=1.0 * self.adversary.gamma)
+    else:
+      images_adv = self.adversary(images_pair, labels.repeat(2))
     if self.hparams.awp:
       self.awp = self.awp_adversary.calc_awp(model=self.model,
                                 inputs_adv=images_adv,
@@ -132,7 +141,12 @@ class CR_pl(LightningModule):
     images_aug1, images_aug2 = images[0], images[1]
     images_pair = torch.cat([images_aug1, images_aug2], dim=0)  # 2B
     with torch.enable_grad():
-      images_adv = self.adversary(images_pair, labels.repeat(2))
+      if self.hparams.custom_awp:
+        images_adv, self.awp = self.adversary(images_pair, labels.repeat(2))
+        iterative_projected_gradient.add_into_weights(self.model, 
+            self.awp, coeff=1.0 * self.adversary.gamma)
+      else:
+        images_adv = self.adversary(images_pair, labels.repeat(2))
 
     outputs_adv = self(images_adv)
     loss_ce = self.criterion(outputs_adv, labels.repeat(2))
@@ -236,6 +250,13 @@ class CR_pl(LightningModule):
   def training_step_end(self, batch_parts):
     if self.hparams.awp:
       self.awp_adversary.restore(self.model, self.awp)
-    
+    elif self.hparams.custom_awp:
+      iterative_projected_gradient.add_into_weights(self.model, 
+            self.awp, coeff=-1.0 * self.adversary.gamma)
+  
+  def validation_step_end(self, batch_parts):
+    if self.hparams.custom_awp:
+      iterative_projected_gradient.add_into_weights(self.model, 
+            self.awp, coeff=-1.0 * self.adversary.gamma)
       
   

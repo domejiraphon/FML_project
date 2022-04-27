@@ -61,12 +61,14 @@ def add_common_flags(parent_parser):
     parent_parser.add_argument('--grad_norm', action="store_true", 
             help="Use grad_norm",)
     parent_parser.add_argument('--awp', action="store_true", 
-            help="Use grad_norm",)
+            help="Use weight perturbation",)
     parent_parser.add_argument('--swa', action="store_true", 
-            help="Use grad_norm",)
+            help="Use Stochastic weighted average",)
     parent_parser.add_argument('--runpath', type=str, default="./runs", 
             help = "the path to store all models")
     parent_parser.add_argument('--model_dir', type=str, default="e1", 
             help = "the path to store model directory")
+    parent_parser.add_argument('--custom_awp', action="store_true", 
+            help="Use custom weight perturbation",)
   
   

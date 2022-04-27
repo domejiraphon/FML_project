@@ -2,6 +2,7 @@ import numpy as np
 import torch
 
 import advertorch.attacks as attacks
+from custom_attacks.iterative_projected_gradient import CustomAttack
 
 class EvalBN(object):
     def __init__(self, adversary):
@@ -55,4 +56,22 @@ def attack_module(model, criterion, _eval=False):
     adversary = attacks.PGDAttack(model, **adv_kwargs)
 
     return adversary
-    
+
+def custom_attack_module(model, criterion, ):
+
+  _ORD = np.inf
+  _PGD_ALPHA = 2. / 255.
+  _PGD_EPS = 8. / 255.
+  _PGD_ITER = 10
+   
+  epsilon = _PGD_EPS
+  alpha = _PGD_ALPHA
+  n_iters = _PGD_ITER
+
+  adv_kwargs = {'loss_fn': criterion, 'clip_min': 0, 'clip_max': 1}
+  adv_kwargs.update({'eps': epsilon, 'eps_iter': alpha, 'ord': _ORD,
+                      'nb_iter': n_iters, 'rand_init': True, 'targeted': True})
+  adversary = CustomAttack(model, **adv_kwargs)
+
+  return adversary
+  
