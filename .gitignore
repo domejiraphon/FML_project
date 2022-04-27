@@ -133,3 +133,6 @@ lightning_logs/
 
 *.out
 *.err
+
+*.swo
+*.swp
