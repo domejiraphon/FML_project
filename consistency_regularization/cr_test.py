@@ -12,6 +12,21 @@ def create_model():
     model.maxpool = nn.Identity()
     return model
 
+class EnsembledModels(nn.Module):
+    def __init__(self, models):
+      super(EnsembledModels, self).__init__()
+      self.model_lst = models
+
+    def forward(self, x):
+      logits = None
+      for idx, model in enumerate(self.model_lst):
+        if idx == 0:
+          logits = model(x).cuda()
+        else:
+          logits += model(x).cuda()
+      logits /= len(self.model_lst)
+      return logits
+
 def main(hparams):
     """
     Main training routine specific for this project
@@ -20,23 +35,43 @@ def main(hparams):
     # ------------------------
     # 1 INIT LIGHTNING MODEL
     # ------------------------
-    if hparams.backbone_model == 'WResNet':
-        backbone = WideResNet(depth=hparams.net_depth, n_classes=hparams.num_classes, widen_factor=hparams.wide_factor)
-    elif hparams.backbone_model == 'ViT':
-        backbone = ViT(image_size=32, patch_size=4, num_classes=hparams.num_classes, dim=768, depth=12,
-                    heads=16, mlp_dim=1024, dropout=0.1, emb_dropout=0.1, pool='mean')
+    if hparams.ensemble == False:
+        if hparams.backbone_model == 'WResNet':
+            backbone = WideResNet(depth=hparams.net_depth, n_classes=hparams.num_classes, widen_factor=hparams.wide_factor)
+        elif hparams.backbone_model == 'ViT':
+            backbone = ViT(image_size=32, patch_size=4, num_classes=hparams.num_classes, dim=768, depth=12,
+                        heads=16, mlp_dim=1024, dropout=0.1, emb_dropout=0.1, pool='mean')
+        else:
+            raise NotImplementedError()
     else:
-        raise NotImplementedError()
+        if hparams.backbone_model == 'WResNet':
+            backbone1 = WideResNet(depth=hparams.net_depth, n_classes=hparams.num_classes, widen_factor=hparams.wide_factor)
+            backbone2 = WideResNet(depth=hparams.net_depth, n_classes=hparams.num_classes, widen_factor=hparams.wide_factor) 
+        else:
+            raise NotImplementedError()
     #backbone = create_model()
-    model = CR_pl(hparams, backbone)
-
     x_test, y_test = load_cifar10(n_examples=1000)
-    print("Test mode")
-    # Test the model from loaded checkpoint
-    checkpoint = torch.load(hparams.load_path)
-    model.load_state_dict(checkpoint['state_dict'], strict=False)
-    backbone = model.model.cuda()
-    backbone.eval()
+    if hparams.ensemble == False:
+        print("Test Mode")
+        model = CR_pl(hparams, backbone)
+        # Test the model from loaded checkpoint
+        checkpoint = torch.load(hparams.load_path1)
+        model.load_state_dict(checkpoint['state_dict'], strict=False)
+        backbone = model.model.cuda()
+        backbone.eval()
+    else:
+        print("Test Mode")
+        model1 = CR_pl(hparams, backbone1)
+        model2 = CR_pl(hparams, backbone2)
+        checkpoint1 = torch.load(hparams.load_path1)
+        checkpoint2 = torch.load(hparams.load_path2)
+        model1.load_state_dict(checkpoint1['state_dict'], strict=False)
+        model2.load_state_dict(checkpoint2['state_dict'], strict=False)
+        backbone1 = model1.model.cuda().eval()
+        backbone2 = model2.model.cuda().eval()
+        model_lst = [backbone1, backbone2]
+        model = EnsembledModels(model_lst)
+
     adversary = AutoAttack(model, norm='Linf', eps=8/255)
     #adversary = AutoAttack(backbone, norm='Linf', eps=8/255, version='custom', attacks_to_run=['apgd-ce', 'apgd-dlr'])
     adversary.apgd.n_restarts = 1
@@ -101,10 +136,24 @@ if __name__ == '__main__':
     )
 
     parent_parser.add_argument(
-        '--load_path',
+        '--load_path1',
         type=str,
         default=None,
-        help='load path for saved model'
+        help='load path 1 for saved model'
+    )
+
+    parent_parser.add_argument(
+        '--load_path2',
+        type=str,
+        default=None,
+        help='load path 2 for saved model'
+    )
+
+    parent_parser.add_argument(
+        '--ensemble',
+        type=bool,
+        default=False,
+        help='decide if ensembling the models, if not, load_path1 is used for model loading'
     )
 
     # each LightningModule defines arguments relevant to it

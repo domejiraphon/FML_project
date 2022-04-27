@@ -64,15 +64,17 @@ class CR_pl(LightningModule):
         def hook(model, input, output):
             activation[name] = output
         return hook
-    self.model.relu.register_forward_hook(get_activation('penultimate'))
     # get original output
     outputs_adv = self.model(images_adv)
-    # get latent
-    outputs_latent = activation['penultimate']
-    outputs_latent = F.avg_pool2d(outputs_latent, 8)
-    outputs_latent = outputs_latent.view(outputs_latent.size(0), -1)
-    #print(f"outputs_adv: {outputs_adv.shape}")
-    #print(f"outputs_latent: {outputs_latent.shape}")
+
+    if self.hparams.extra_reg == 'cov': 
+        self.model.relu.register_forward_hook(get_activation('penultimate'))
+        # get latent
+        outputs_latent = activation['penultimate']
+        outputs_latent = F.avg_pool2d(outputs_latent, 8)
+        outputs_latent = outputs_latent.view(outputs_latent.size(0), -1)
+        #print(f"outputs_adv: {outputs_adv.shape}")
+        #print(f"outputs_latent: {outputs_latent.shape}")
     loss_ce = self.criterion(outputs_adv, labels.repeat(2))
 
     ### consistency regularization ###
