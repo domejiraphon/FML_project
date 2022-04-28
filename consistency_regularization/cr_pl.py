@@ -15,7 +15,7 @@ import awp
 import pandas as pd 
 
 class CR_pl(LightningModule):
-  def __init__(self, hparams, backbone):
+  def __init__(self, hparams, backbone, proxy=None):
     super().__init__()
 
     self.args = hparams
@@ -28,12 +28,11 @@ class CR_pl(LightningModule):
     
     # setup criterion
     self.criterion = nn.CrossEntropyLoss()
-    if hparams.awp:
-      proxy = copy.deepcopy(self.model).half().to("cuda")
+    if proxy:
       proxy_opt = torch.optim.SGD(proxy.parameters(), lr=0.01)
       self.awp_adversary = awp.AdvWeightPerturb(proxy=proxy, 
-                proxy_optim=proxy_opt, 
-                gamma=1e-2)
+                    proxy_optim=proxy_opt, 
+                    gamma=1e-2)
     # setup dataset and adversary attack
     self.kwargs = {'pin_memory': hparams.pin_memory, 'num_workers': hparams.num_workers}
     self.train_set, self.test_set, self.image_size, self.n_classes = get_dataset('autoaug', True)
@@ -203,6 +202,7 @@ class CR_pl(LightningModule):
     #     "interval": "step",
     # }
     return {"optimizer": optimizer, "lr_scheduler": scheduler}
+  
   def add_model_specific_args(parent_parser, root_dir):  # pragma: no cover
     """
     Parameters you define here will be available to your model through self.hparams
@@ -234,6 +234,7 @@ class CR_pl(LightningModule):
   def training_step_end(self, batch_parts):
     if self.hparams.awp:
       self.awp_adversary.restore(self.model, self.awp)
+
   
   def validation_epoch_end(self, batch_parts):
 

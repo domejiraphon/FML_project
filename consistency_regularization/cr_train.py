@@ -1,4 +1,6 @@
 import os
+import sys 
+
 import WideResNet
 from WideResNet import *
 from cr_pl import *
@@ -10,6 +12,7 @@ from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 from pytorch_lightning.utilities.seed import seed_everything
 from pytorch_lightning.strategies.ddp import DDPStrategy
 from pytorch_lightning.loggers import TensorBoardLogger 
+import utils 
 
 SEED = 2022
 seed_everything(SEED)
@@ -39,7 +42,10 @@ def main(hparams):
     else:
         raise NotImplementedError()
     #backbone = create_model()
-    cr_pl = CR_pl(hparams, backbone)
+    proxy=None
+    if hparams.awp:
+      proxy = copy.deepcopy(backbone)
+    cr_pl = CR_pl(hparams, backbone, proxy)
     
     # ------------------------
     # 2 DEFINE CALLBACKS
@@ -97,7 +103,7 @@ if __name__ == '__main__':
     # TRAINING ARGUMENTS
     # ------------------------
     # these are project-wide arguments
-
+    sys.excepthook = utils.colored_hook(os.path.dirname(os.path.realpath(__file__)))
     root_dir = os.path.dirname('./cr_pl')
     parent_parser = argparse.ArgumentParser(add_help=False)
 
