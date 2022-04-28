@@ -1,6 +1,6 @@
 import os
-import WideResNet_v2
-from WideResNet_v2 import *
+import WideResNet
+from WideResNet import *
 from cr_pl import *
 from vit_pytorch import ViT
 import torchvision
@@ -39,7 +39,7 @@ def main(hparams):
         raise NotImplementedError()
     #backbone = create_model()
     cr_pl = CR_pl(hparams, backbone)
-    
+    #torch.autograd.set_detect_anomaly(True)
     # ------------------------
     # 2 DEFINE CALLBACKS
     # ------------------------

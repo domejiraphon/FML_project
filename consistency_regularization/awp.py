@@ -38,11 +38,11 @@ class AdvWeightPerturb(object):
         self.proxy.load_state_dict(model.state_dict())
         self.proxy.train()
         for i in range(self.num_iter):
-          loss = - F.cross_entropy(self.proxy(inputs_adv), targets)
-
-          self.proxy_optim.zero_grad()
-          loss.backward()
-          self.proxy_optim.step()
+            loss = - F.cross_entropy(self.proxy(inputs_adv), targets)
+            print(f"loss: {loss}")
+            self.proxy_optim.zero_grad()
+            loss.backward()
+            self.proxy_optim.step()
 
         # the adversary weight perturb
         diff = diff_in_weights(model, self.proxy)
@@ -53,3 +53,4 @@ class AdvWeightPerturb(object):
 
     def restore(self, model, diff):
         add_into_weights(model, diff, coeff=-1.0 * self.gamma)
+

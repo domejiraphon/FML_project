@@ -1,15 +1,18 @@
-#BSUB -J "cr_train_cov_reg"
+#BSUB -J "HMIN_sn_swa"
 #BSUB -R "rusage[mem=4]"
-#BSUB -q gpu32
 #BSUB -n 10
 #BSUB -gpu "num=2:mode=shared:j_exclusive=yes"
-#BSUB -e cr_train_cov_reg.err
-#BSUB -o cr_train_cov_reg.out
+#BSUB -e HMIN_sn_swa.err
+#BSUB -o HMIN_sn_swa.out
 
 . /gpfs/share/skynet/apps/anaconda3/etc/profile.d/conda.sh
 conda activate opence_env_1.5.1
 
-python cr_train.py --batch_size 64 --num_workers 8 --max_epochs 200 --gpus 2 --optimizer "sgd" --lam 2.0 --cov_coeff 0.1 --extra_reg "cov" --loss_func "JS" --backbone_model "WResNet" --lr 0.1 --scheduler "multistep"
+python cr_train.py --batch_size 256 --num_workers 8 --max_epochs 200 --gpus 2 --optimizer "sgd" --loss_func "MIN" --backbone_model "WResNet" --lr 0.1 --scheduler "multistep" --use_sn --use_swa
+
+#python cr_train.py --batch_size 256 --num_workers 8 --max_epochs 200 --gpus 2 --optimizer "sgd" --loss_func "JS" --backbone_model "WResNet" --lr 0.1 --scheduler "multistep" --use_sn --use_swa
+
+#python cr_train.py --batch_size 64 --num_workers 8 --max_epochs 200 --gpus 2 --optimizer "sgd" --lam 2.0 --cov_coeff 0.1 --extra_reg "cov" --loss_func "JS" --backbone_model "WResNet" --lr 0.1 --scheduler "multistep"
 
 #python cr_train.py --batch_size 32 --num_workers 8 --max_epochs 200 --gpus 2 --optimizer "sgd" --lam 1.0 --loss_func "JS" --backbone_model "ViT" --lr 1e-4 --scheduler "cosine"
 

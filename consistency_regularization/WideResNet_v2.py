@@ -3,14 +3,11 @@ import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import torch.nn.utils.spectral_norm as Spectral_Norm
 
 class BaseModel(nn.Module, metaclass=ABCMeta):
-    def __init__(self, last_dim, num_classes=10, use_sn=False):
+    def __init__(self, last_dim, num_classes=10):
         super(BaseModel, self).__init__()
         self.linear = nn.Linear(last_dim, num_classes)
-        if use_sn:
-            self.linear = Spectral_Norm(self.linear)
 
     @abstractmethod
     def penultimate(self, inputs):
@@ -32,8 +29,9 @@ class BaseModel(nn.Module, metaclass=ABCMeta):
 
         return output
 
+
 class BasicBlock(nn.Module):
-    def __init__(self, in_planes, out_planes, stride, use_sn=False):
+    def __init__(self, in_planes, out_planes, stride):
         super(BasicBlock, self).__init__()
         self.bn1 = nn.BatchNorm2d(in_planes)
         self.relu1 = nn.ReLU(inplace=True)
@@ -46,11 +44,7 @@ class BasicBlock(nn.Module):
         self.equalInOut = (in_planes == out_planes)
         self.convShortcut = (not self.equalInOut) and nn.Conv2d(in_planes, out_planes, kernel_size=1, stride=stride,
                                                                 padding=0, bias=False) or None
-        if use_sn:
-            self.conv1 = Spectral_Norm(self.conv1)
-            self.conv2 = Spectral_Norm(self.conv2)
-            if isinstance(self.convShortcut, nn.Conv2d):
-                self.convShortcut = Spectral_Norm(self.convShortcut)
+
     def forward(self, x):
         if not self.equalInOut:
             x = self.relu1(self.bn1(x))
@@ -60,26 +54,26 @@ class BasicBlock(nn.Module):
         out = self.conv2(out)
         return torch.add(x if self.equalInOut else self.convShortcut(x), out)
 
-class NetworkBlock(nn.Module):
-    def __init__(self, nb_layers, in_planes, out_planes, block, stride, use_sn):
-        super(NetworkBlock, self).__init__()
-        self.layer = self._make_layer(block, in_planes, out_planes, nb_layers, stride, use_sn)
 
-    def _make_layer(self, block, in_planes, out_planes, nb_layers, stride, use_sn):
+class NetworkBlock(nn.Module):
+    def __init__(self, nb_layers, in_planes, out_planes, block, stride):
+        super(NetworkBlock, self).__init__()
+        self.layer = self._make_layer(block, in_planes, out_planes, nb_layers, stride)
+
+    def _make_layer(self, block, in_planes, out_planes, nb_layers, stride):
         layers = []
         for i in range(int(nb_layers)):
-            layers.append(block(i == 0 and in_planes or out_planes, out_planes, 
-                                i == 0 and stride or 1, 
-                                use_sn=use_sn))
+            layers.append(block(i == 0 and in_planes or out_planes, out_planes, i == 0 and stride or 1))
         return nn.Sequential(*layers)
 
     def forward(self, x):
         return self.layer(x)
 
+
 class WideResNet(BaseModel):
-    def __init__(self, n_classes=10, depth=34, widen_factor=1, use_sn=False):
+    def __init__(self, n_classes=10, depth=34, widen_factor=1):
         last_dim = 64 * widen_factor
-        super(WideResNet, self).__init__(last_dim, n_classes, use_sn)
+        super(WideResNet, self).__init__(last_dim, n_classes)
         nChannels = [16, 16 * widen_factor, 32 * widen_factor, 64 * widen_factor]
         assert ((depth - 4) % 6 == 0)
         self.n_classes = n_classes
@@ -89,19 +83,17 @@ class WideResNet(BaseModel):
         # 1st conv before any network block
         self.conv1 = nn.Conv2d(3, nChannels[0], kernel_size=3, stride=1,
                                padding=1, bias=False)
-        if use_sn:
-            self.conv1 = Spectral_Norm(self.conv1)
         # 1st block
-        self.block1 = NetworkBlock(n, nChannels[0], nChannels[1], block, 1, use_sn=use_sn)
+        self.block1 = NetworkBlock(n, nChannels[0], nChannels[1], block, 1)
         # 2nd block
-        self.block2 = NetworkBlock(n, nChannels[1], nChannels[2], block, 2, use_sn=use_sn)
+        self.block2 = NetworkBlock(n, nChannels[1], nChannels[2], block, 2)
         # 3rd block
-        self.block3 = NetworkBlock(n, nChannels[2], nChannels[3], block, 2, use_sn=use_sn)
+        self.block3 = NetworkBlock(n, nChannels[2], nChannels[3], block, 2)
         # global average pooling and classifier
         self.bn1 = nn.BatchNorm2d(nChannels[3])
         self.relu = nn.ReLU(inplace=True)
         self.last_dim = nChannels[3]
-       
+
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
                 n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
@@ -123,3 +115,4 @@ class WideResNet(BaseModel):
         out = out.view(out.size(0), -1)
         #print(f"out: {out.shape}")
         return out
+        

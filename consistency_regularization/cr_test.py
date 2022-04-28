@@ -51,8 +51,8 @@ def main(hparams):
             raise NotImplementedError()
     #backbone = create_model()
     x_test, y_test = load_cifar10(n_examples=1000)
+    print("Test Mode")
     if hparams.ensemble == False:
-        print("Test Mode")
         model = CR_pl(hparams, backbone)
         # Test the model from loaded checkpoint
         checkpoint = torch.load(hparams.load_path1)
@@ -60,7 +60,6 @@ def main(hparams):
         backbone = model.model.cuda()
         backbone.eval()
     else:
-        print("Test Mode")
         model1 = CR_pl(hparams, backbone1)
         model2 = CR_pl(hparams, backbone2)
         checkpoint1 = torch.load(hparams.load_path1)
@@ -151,8 +150,7 @@ if __name__ == '__main__':
 
     parent_parser.add_argument(
         '--ensemble',
-        type=bool,
-        default=False,
+        action='store_true',
         help='decide if ensembling the models, if not, load_path1 is used for model loading'
     )
 
@@ -164,3 +162,4 @@ if __name__ == '__main__':
     # RUN TRAINING
     # ---------------------
     main(hyperparams)
+

@@ -27,14 +27,14 @@ class CR_pl(LightningModule):
     
     # setup criterion
     self.criterion = nn.CrossEntropyLoss()
-
+    
     # use awp or not
     if hparams.use_awp:
-      proxy = copy.deepcopy(self.model).half()
-      proxy_opt = torch.optim.SGD(proxy.parameters(), lr=0.01)
-      self.awp_adversary = awp.AdvWeightPerturb(proxy=proxy, 
-                proxy_optim=proxy_opt, 
-                gamma=1e-2)
+      self.proxy = copy.deepcopy(self.model)
+      proxy_opt = torch.optim.SGD(self.proxy.parameters(), lr=0.01)
+      self.awp_adversary = awp.AdvWeightPerturb(proxy=self.proxy,
+                                                proxy_optim=proxy_opt, 
+                                                gamma=1e-2)
 
     # setup dataset and adversary attack
     self.kwargs = {'pin_memory': hparams.pin_memory, 'num_workers': hparams.num_workers}
@@ -60,20 +60,18 @@ class CR_pl(LightningModule):
     images, labels = batch
     images_aug1, images_aug2 = images[0], images[1]
     images_pair = torch.cat([images_aug1, images_aug2], dim=0)  # 2B
-   
     #print(images_pair.shape) 
     if stage == "train":
         images_adv = self.adversary(images_pair, labels.repeat(2))
+        if self.hparams.use_awp:
+            self.awp = self.awp_adversary.calc_awp(model=self.model,
+                                                inputs_adv=images_adv,
+                                                targets=labels.repeat(2))
+            self.awp_adversary.perturb(self.model, self.awp)
     else:
         with torch.enable_grad():
             images_adv = self.adversary(images_pair, labels.repeat(2))
 
-    if stage == "train" and self.hparams.use_awp:
-        self.awp = self.awp_adversary.calc_awp(model=self.model,
-                                            inputs_adv=images_adv,
-                                            targets=labels.repeat(2))
-        self.awp_adversary.perturb(self.model, self.awp)
- 
     # register hook to get intermediate output
     activation = {}
     def get_activation(name):
@@ -207,6 +205,7 @@ class CR_pl(LightningModule):
     #     "interval": "step",
     # }
     return {"optimizer": optimizer, "lr_scheduler": scheduler}
+
   def add_model_specific_args(parent_parser, root_dir):  # pragma: no cover
     """
     Parameters you define here will be available to your model through self.hparams
