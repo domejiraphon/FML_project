@@ -15,7 +15,7 @@ import awp
 import pandas as pd 
 
 class CR_pl(LightningModule):
-  def __init__(self, hparams, backbone, proxy=None):
+  def __init__(self, hparams, backbone):
     super().__init__()
 
     self.args = hparams
@@ -28,7 +28,9 @@ class CR_pl(LightningModule):
     
     # setup criterion
     self.criterion = nn.CrossEntropyLoss()
-    if proxy:
+    if self.hparams.awp:
+     
+      proxy = copy.deepcopy(backbone).half().to("cuda")
       proxy_opt = torch.optim.SGD(proxy.parameters(), lr=0.01)
       self.awp_adversary = awp.AdvWeightPerturb(proxy=proxy, 
                     proxy_optim=proxy_opt, 

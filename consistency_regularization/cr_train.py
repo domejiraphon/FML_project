@@ -1,5 +1,6 @@
 import os
 import sys 
+import glob 
 
 import WideResNet
 from WideResNet import *
@@ -42,10 +43,8 @@ def main(hparams):
     else:
         raise NotImplementedError()
     #backbone = create_model()
-    proxy=None
-    if hparams.awp:
-      proxy = copy.deepcopy(backbone)
-    cr_pl = CR_pl(hparams, backbone, proxy)
+   
+    cr_pl = CR_pl(hparams, backbone)
     
     # ------------------------
     # 2 DEFINE CALLBACKS
@@ -56,7 +55,12 @@ def main(hparams):
         annealing_strategy='cos', avg_fn=None, device=None)
     if hparams.restart:
       os.system(f"rm -rf {os.path.join(hparams.runpath, hparams.model_dir)}")
-
+    ckpt = glob.glob(os.path.join(hparams.runpath, hparams.model_dir, "*.ckpt"))
+    if len(ckpt) > 0:
+     
+      cr_pl = CR_pl.load_from_checkpoint(hparams, backbone, checkpoint_path=ckpt[0])
+    
+    exit()
     logger = TensorBoardLogger(save_dir=hparams.runpath,
                     name=hparams.model_dir,
                   )
