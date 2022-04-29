@@ -30,9 +30,9 @@ class CR_pl(LightningModule):
     
     # use awp or not
     if hparams.use_awp:
-      self.proxy = copy.deepcopy(self.model)
-      proxy_opt = torch.optim.SGD(self.proxy.parameters(), lr=0.01)
-      self.awp_adversary = awp.AdvWeightPerturb(proxy=self.proxy,
+      proxy = copy.deepcopy(backbone).half().cuda()
+      proxy_opt = torch.optim.SGD(proxy.parameters(), lr=0.01)
+      self.awp_adversary = awp.AdvWeightPerturb(proxy=proxy,
                                                 proxy_optim=proxy_opt, 
                                                 gamma=1e-2)
 
@@ -70,6 +70,7 @@ class CR_pl(LightningModule):
             self.awp_adversary.perturb(self.model, self.awp)
     else:
         with torch.enable_grad():
+
             images_adv = self.adversary(images_pair, labels.repeat(2))
 
     # register hook to get intermediate output
@@ -90,7 +91,7 @@ class CR_pl(LightningModule):
         #print(f"outputs_adv: {outputs_adv.shape}")
         #print(f"outputs_latent: {outputs_latent.shape}")
     loss_ce = self.criterion(outputs_adv, labels.repeat(2))
-
+    
     ### consistency regularization ###
     outputs_adv1, outputs_adv2 = outputs_adv.chunk(2)
     #print(f"outputs_adv1.shape: {outputs_adv1.shape}, outputs_adv2.shape: {outputs_adv2.shape}")

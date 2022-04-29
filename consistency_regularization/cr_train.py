@@ -1,4 +1,4 @@
-import os
+import os, sys 
 import WideResNet
 from WideResNet import *
 from cr_pl import *
@@ -9,7 +9,8 @@ from pytorch_lightning.callbacks import StochasticWeightAveraging, TQDMProgressB
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 from pytorch_lightning.utilities.seed import seed_everything
 from pytorch_lightning.strategies.ddp import DDPStrategy
-
+from pytorch_lightning.loggers import TensorBoardLogger 
+import utils
 SEED = 2022
 seed_everything(SEED)
 
@@ -48,6 +49,7 @@ def main(hparams):
         swa_callback = StochasticWeightAveraging(swa_epoch_start=0.8, swa_lrs=None, annealing_epochs=10, 
                                                 annealing_strategy='cos', avg_fn=None)
     checkpoint_callback = ModelCheckpoint(
+        dirpath=os.path.join(hparams.runpath, hparams.model_dir), 
         save_top_k=1,
         verbose=True,
         monitor='val_loss',
@@ -62,6 +64,9 @@ def main(hparams):
     callbacks = [checkpoint_callback, bar]
     if hparams.use_swa:
         callbacks.append(swa_callback)
+    logger = TensorBoardLogger(save_dir=hparams.runpath,
+                    name=hparams.model_dir,
+                  )
     trainer = pl.Trainer(
         progress_bar_refresh_rate=1,
         gpus=hparams.gpus,
@@ -70,7 +75,8 @@ def main(hparams):
         max_epochs=hparams.max_epochs,
         #strategy=None,
         strategy=DDPStrategy(find_unused_parameters=False),
-        callbacks=callbacks
+        callbacks=callbacks,
+        logger=logger,
         )
 
     # ------------------------
@@ -86,7 +92,7 @@ if __name__ == '__main__':
     # TRAINING ARGUMENTS
     # ------------------------
     # these are project-wide arguments
-
+    sys.excepthook = utils.colored_hook(os.path.dirname(os.path.realpath(__file__)))
     root_dir = os.path.dirname('./cr_pl')
     parent_parser = argparse.ArgumentParser(add_help=False)
 

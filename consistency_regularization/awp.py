@@ -39,7 +39,7 @@ class AdvWeightPerturb(object):
         self.proxy.train()
         for i in range(self.num_iter):
             loss = - F.cross_entropy(self.proxy(inputs_adv), targets)
-            print(f"loss: {loss}")
+           
             self.proxy_optim.zero_grad()
             loss.backward()
             self.proxy_optim.step()

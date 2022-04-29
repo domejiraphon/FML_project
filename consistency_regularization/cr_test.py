@@ -50,7 +50,8 @@ def main(hparams):
         else:
             raise NotImplementedError()
     #backbone = create_model()
-    x_test, y_test = load_cifar10(n_examples=hparams.num_examples)
+    #x_test, y_test = load_cifar10(n_examples=hparams.num_examples)
+    x_test, y_test = load_cifar10()
     print("Test Mode")
     if hparams.ensemble:
         model1 = CR_pl(hparams, backbone1)
