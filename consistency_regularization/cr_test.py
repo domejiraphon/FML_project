@@ -50,16 +50,9 @@ def main(hparams):
         else:
             raise NotImplementedError()
     #backbone = create_model()
-    x_test, y_test = load_cifar10(n_examples=1000)
+    x_test, y_test = load_cifar10(n_examples=hparams.num_examples)
     print("Test Mode")
-    if hparams.ensemble == False:
-        model = CR_pl(hparams, backbone)
-        # Test the model from loaded checkpoint
-        checkpoint = torch.load(hparams.load_path1)
-        model.load_state_dict(checkpoint['state_dict'], strict=False)
-        backbone = model.model.cuda()
-        backbone.eval()
-    else:
+    if hparams.ensemble:
         model1 = CR_pl(hparams, backbone1)
         model2 = CR_pl(hparams, backbone2)
         checkpoint1 = torch.load(hparams.load_path1)
@@ -70,6 +63,13 @@ def main(hparams):
         backbone2 = model2.model.cuda().eval()
         model_lst = [backbone1, backbone2]
         model = EnsembledModels(model_lst)
+    else:
+        model = CR_pl(hparams, backbone)
+        # Test the model from loaded checkpoint
+        checkpoint = torch.load(hparams.load_path1)
+        model.load_state_dict(checkpoint['state_dict'], strict=False)
+        backbone = model.model.cuda()
+        backbone.eval()
 
     adversary = AutoAttack(model, norm='Linf', eps=8/255)
     #adversary = AutoAttack(backbone, norm='Linf', eps=8/255, version='custom', attacks_to_run=['apgd-ce', 'apgd-dlr'])
@@ -92,12 +92,14 @@ if __name__ == '__main__':
         default=1,
         help='how many gpus'
     )
+
     parent_parser.add_argument(
         '--num_nodes',
         type=int,
         default=1,
         help='how many nodes'
     )
+
     parent_parser.add_argument(
         '--precision',
         type=int,
@@ -146,6 +148,31 @@ if __name__ == '__main__':
         type=str,
         default=None,
         help='load path 2 for saved model'
+    )
+
+    parent_parser.add_argument(
+        '--num_examples',
+        type=int,
+        default=100,
+        help='number of examples to generate for autoattack evaluation'
+    )
+
+    parent_parser.add_argument(
+        '--use_sn', 
+        action='store_true',
+        help="Use Spectral Normalization",
+    )
+
+    parent_parser.add_argument(
+        '--use_awp', 
+        action='store_true', 
+        help="Use Stochastic Weight Perturbation",
+    )
+
+    parent_parser.add_argument(
+        '--use_swa', 
+        action='store_true',
+        help="Use Stochastic Weighted Average",
     )
 
     parent_parser.add_argument(
