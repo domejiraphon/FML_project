@@ -47,7 +47,9 @@ def main(hparams):
     if hparams.use_swa:
         swa_callback = StochasticWeightAveraging(swa_epoch_start=0.8, swa_lrs=None, annealing_epochs=10, 
                                                 annealing_strategy='cos', avg_fn=None)
+
     checkpoint_callback = ModelCheckpoint(
+        dirpath=os.path.join(hparams.runpath, hparams.model_dir),
         save_top_k=1,
         verbose=True,
         monitor='val_loss',
@@ -78,8 +80,8 @@ def main(hparams):
     # ------------------------
     trainer.fit(cr_pl)
     if hparams.use_swa:
-      path = os.path.join(hparams.runpath, hparams.model_dir, "swa.ckpt")
-      trainer.save_checkpoint(path)
+        path = os.path.join(hparams.runpath, hparams.model_dir, "swa.ckpt")
+        trainer.save_checkpoint(path)
 
 if __name__ == '__main__':
     # ------------------------
