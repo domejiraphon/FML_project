@@ -17,7 +17,7 @@ import pandas as pd
 class CR_pl(LightningModule):
   def __init__(self, hparams, backbone):
     super().__init__()
-
+    
     self.args = hparams
     self.hparams.update(vars(hparams))
     
@@ -29,8 +29,9 @@ class CR_pl(LightningModule):
     # setup criterion
     self.criterion = nn.CrossEntropyLoss()
     if self.hparams.awp:
-     
-      proxy = copy.deepcopy(backbone).half().to("cuda")
+    
+      #proxy = nn.DataParallel(copy.deepcopy(backbone).half(), device_ids=[0,1]).to("cuda")
+      proxy = copy.deepcopy(backbone).half().cuda()
       proxy_opt = torch.optim.SGD(proxy.parameters(), lr=0.01)
       self.awp_adversary = awp.AdvWeightPerturb(proxy=proxy, 
                     proxy_optim=proxy_opt, 
@@ -72,6 +73,7 @@ class CR_pl(LightningModule):
       self.awp = self.awp_adversary.calc_awp(model=self.model,
                                 inputs_adv=images_adv,
                                 targets=labels.repeat(2))
+
       self.awp_adversary.perturb(self.model, self.awp)
     # register hook to get intermediate output
     activation = {}

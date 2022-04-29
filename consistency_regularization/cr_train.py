@@ -55,12 +55,6 @@ def main(hparams):
         annealing_strategy='cos', avg_fn=None, device=None)
     if hparams.restart:
       os.system(f"rm -rf {os.path.join(hparams.runpath, hparams.model_dir)}")
-    ckpt = glob.glob(os.path.join(hparams.runpath, hparams.model_dir, "*.ckpt"))
-    if len(ckpt) > 0:
-     
-      cr_pl = CR_pl.load_from_checkpoint(hparams, backbone, checkpoint_path=ckpt[0])
-    
-    exit()
     logger = TensorBoardLogger(save_dir=hparams.runpath,
                     name=hparams.model_dir,
                   )
@@ -95,13 +89,17 @@ def main(hparams):
     # ------------------------
     # 4 START TRAINING
     # ------------------------
-    trainer.fit(cr_pl)
+    ckpt = glob.glob(os.path.join(hparams.runpath, hparams.model_dir, "*.ckpt"))
+    if len(ckpt) > 0:
+      trainer.fit(cr_pl, ckpt_path=ckpt[0])
+    else:
+      trainer.fit(cr_pl)
     #log loss
     cr_pl.log_info(write_pd=True, dir=os.path.join(hparams.runpath, hparams.model_dir))
     if hparams.swa:
       path = os.path.join(hparams.runpath, hparams.model_dir, "swa.ckpt")
       trainer.save_checkpoint(path)
-
+    
 if __name__ == '__main__':
     # ------------------------
     # TRAINING ARGUMENTS

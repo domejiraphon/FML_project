@@ -20,4 +20,4 @@ fi
 
 singularity exec --nv  --overlay /scratch/jy3694/torchenv.ext3:ro \
     /scratch/work/public/singularity/cuda11.3.0-cudnn8-devel-ubuntu20.04.sif \
-    /bin/bash -c "source /ext3/env.sh; python cr_train.py --model_dir swa_min --restart --swa --gpus 1 --loss_func MIN"
+    /bin/bash -c "source /ext3/env.sh; python cr_train.py --model_dir swa_min --swa --gpus 1 --loss_func MIN"

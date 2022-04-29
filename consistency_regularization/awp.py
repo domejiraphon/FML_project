@@ -8,7 +8,7 @@ EPS = 1E-20
 def diff_in_weights(model, proxy):
     diff_dict = OrderedDict()
     model_state_dict = model.state_dict()
-    proxy_state_dict = proxy.state_dict()
+    proxy_state_dict = {k.replace("module.", ""): v for k, v in proxy.state_dict().items()}
     for (old_k, old_w), (new_k, new_w) in zip(model_state_dict.items(), proxy_state_dict.items()):
         if len(old_w.size()) <= 1:
             continue
@@ -35,17 +35,25 @@ class AdvWeightPerturb(object):
         self.num_iter = num_iter
 
     def calc_awp(self, model, inputs_adv, targets):
-        self.proxy.load_state_dict(model.state_dict())
+        #model_state_dict = {"module." + k: v for k, v in model.state_dict().items()}
+        model_state_dict = model.state_dict()
+        self.proxy.load_state_dict(model_state_dict)
+        
         self.proxy.train()
+        
         for i in range(self.num_iter):
-          loss = - F.cross_entropy(self.proxy(inputs_adv), targets)
 
+          #loss = - F.cross_entropy(self.proxy(inputs_adv.to("cuda:0")), targets.to("cuda:0"))
+          loss = - F.cross_entropy(self.proxy(inputs_adv), targets)
+         
           self.proxy_optim.zero_grad()
           loss.backward()
           self.proxy_optim.step()
 
         # the adversary weight perturb
         diff = diff_in_weights(model, self.proxy)
+        print(diff)
+        exit()
         return diff
 
     def perturb(self, model, diff):
