@@ -35,12 +35,16 @@ def main(hparams):
     #backbone = create_model()
     model = CR_pl(hparams, backbone)
 
-    #x_test, y_test = load_cifar10(n_examples=3000)
-    x_test, y_test = load_cifar10()
+    x_test, y_test = load_cifar10(n_examples=1000)
+    #x_test, y_test = load_cifar10()
     print("Test mode")
     # Test the model from loaded checkpoint
-    ckpt = glob.glob(os.path.join(hparams.runpath, hparams.model_dir, "*.ckpt"))[0]
-    print(f"LOAD CKPT: {ckpt}")
+    ckpt = sorted(glob.glob(os.path.join(hparams.runpath, hparams.model_dir, "*.ckpt")))
+    if hparams.use_swa:
+      ckpt = ckpt[-1]
+    else:
+      ckpt = ckpt[0]
+    print(f"Load from: {ckpt}")
     checkpoint = torch.load(ckpt)
     model.load_state_dict(checkpoint['state_dict'], strict=False)
     backbone = model.model.cuda()
@@ -49,9 +53,12 @@ def main(hparams):
     #adversary = AutoAttack(backbone, norm='Linf', eps=8/255, version='custom', attacks_to_run=['apgd-ce', 'apgd-dlr'])
     adversary.apgd.n_restarts = 1
     robust_accuracy_dict = adversary.run_standard_evaluation(x_test.cuda(), y_test.cuda())
+    """
+    for k, v in robust_accuracy_dict.items():
+      robust_accuracy_dict[k] = v.detach().cpu().numpy() * 100
     df = pd.DataFrame.from_dict(robust_accuracy_dict, orient="index")
-    df.to_csv(os.path.join(runpath, hparams.model_dir, "metrics.csv"))
-
+    df.to_csv(os.path.join(hparams.runpath, hparams.model_dir, "metrics.csv"))
+    """
 if __name__ == '__main__':
     # ------------------------
     # TRAINING ARGUMENTS
@@ -124,13 +131,13 @@ if __name__ == '__main__':
     )
 
     parent_parser.add_argument(
-        '--awp', 
+        '--use_awp', 
         action="store_true", 
         help="Use weight perturbation",
     )
 
     parent_parser.add_argument(
-        '--swa', 
+        '--use_swa', 
         action="store_true", 
         help="Use Stochastic weighted average",
     )

@@ -35,39 +35,38 @@ def main(hparams):
     # ------------------------
     # 1 INIT LIGHTNING MODEL
     # ------------------------
-    if hparams.ensemble == False:
-        if hparams.backbone_model == 'WResNet':
-            backbone = WideResNet(depth=hparams.net_depth, n_classes=hparams.num_classes, widen_factor=hparams.wide_factor)
-        elif hparams.backbone_model == 'ViT':
-            backbone = ViT(image_size=32, patch_size=4, num_classes=hparams.num_classes, dim=768, depth=12,
-                        heads=16, mlp_dim=1024, dropout=0.1, emb_dropout=0.1, pool='mean')
-        else:
-            raise NotImplementedError()
+    backbone_lst = []
+    if hparams.backbone_model == 'WResNet':
+        load_path_lst = hparams.load_path.split(', ')
+            
+        for _ in load_path_lst:
+            backbone = WideResNet(depth=hparams.net_depth, 
+                                n_classes=hparams.num_classes, 
+                                widen_factor=hparams.wide_factor,
+                                use_sn=hparams.use_sn)
+            backbone_lst.append(backbone)
     else:
-        if hparams.backbone_model == 'WResNet':
-            backbone1 = WideResNet(depth=hparams.net_depth, n_classes=hparams.num_classes, widen_factor=hparams.wide_factor)
-            backbone2 = WideResNet(depth=hparams.net_depth, n_classes=hparams.num_classes, widen_factor=hparams.wide_factor) 
-        else:
-            raise NotImplementedError()
+        raise NotImplementedError()
     #backbone = create_model()
     x_test, y_test = load_cifar10(n_examples=hparams.num_examples)
     print("Test Mode")
     if hparams.ensemble:
-        model1 = CR_pl(hparams, backbone1)
-        model2 = CR_pl(hparams, backbone2)
-        checkpoint1 = torch.load(hparams.load_path1)
-        checkpoint2 = torch.load(hparams.load_path2)
-        model1.load_state_dict(checkpoint1['state_dict'], strict=False)
-        model2.load_state_dict(checkpoint2['state_dict'], strict=False)
-        backbone1 = model1.model.cuda().eval()
-        backbone2 = model2.model.cuda().eval()
-        model_lst = [backbone1, backbone2]
+        model_lst = []
+        for idx, load_path in enumerate(load_path_lst):
+            model = CR_pl(hparams, backbone_lst[idx])
+            checkpoint = torch.load(load_path)
+            state_dict = {k.replace("model.", ""): v for k, v in checkpoint['state_dict'].items()}
+            model.load_state_dict(state_dict, strict=True)
+            backbone = model.model.cuda().eval()
+            model_lst.append(model)
         model = EnsembledModels(model_lst)
     else:
-        model = CR_pl(hparams, backbone)
+        # print(backbone_lst)
+        model = CR_pl(hparams, backbone_lst[0])
         # Test the model from loaded checkpoint
-        checkpoint = torch.load(hparams.load_path1)
-        model.load_state_dict(checkpoint['state_dict'], strict=False)
+        checkpoint = torch.load(load_path_lst[0])
+        state_dict = {k.replace("model.", ""): v for k, v in checkpoint['state_dict'].items()}
+        model.load_state_dict(state_dict, strict=True)
         backbone = model.model.cuda()
         backbone.eval()
 
@@ -137,17 +136,10 @@ if __name__ == '__main__':
     )
 
     parent_parser.add_argument(
-        '--load_path1',
+        '--load_path',
         type=str,
         default=None,
-        help='load path 1 for saved model'
-    )
-
-    parent_parser.add_argument(
-        '--load_path2',
-        type=str,
-        default=None,
-        help='load path 2 for saved model'
+        help='load path for saved models, separate by ","'
     )
 
     parent_parser.add_argument(
