@@ -35,8 +35,8 @@ def main(hparams):
     #backbone = create_model()
     model = CR_pl(hparams, backbone)
 
-    x_test, y_test = load_cifar10(n_examples=1000)
-    #x_test, y_test = load_cifar10()
+    #x_test, y_test = load_cifar10(n_examples=1000)
+    x_test, y_test = load_cifar10()
     print("Test mode")
     # Test the model from loaded checkpoint
     ckpt = sorted(glob.glob(os.path.join(hparams.runpath, hparams.model_dir, "*.ckpt")))
@@ -46,7 +46,9 @@ def main(hparams):
       ckpt = ckpt[0]
     print(f"Load from: {ckpt}")
     checkpoint = torch.load(ckpt)
-    model.load_state_dict(checkpoint['state_dict'], strict=False)
+    state_dict = {k.replace("model.", ""): v for k, v in checkpoint['state_dict'].items()}
+    model.model.load_state_dict(state_dict, strict=True)
+
     backbone = model.model.cuda()
     backbone.eval()
     adversary = AutoAttack(model, norm='Linf', eps=8/255)

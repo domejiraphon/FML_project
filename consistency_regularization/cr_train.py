@@ -11,14 +11,75 @@ from pytorch_lightning.utilities.seed import seed_everything
 from pytorch_lightning.strategies.ddp import DDPStrategy
 from pytorch_lightning.loggers import TensorBoardLogger 
 import utils
-SEED = 2022
-seed_everything(SEED)
+import glob 
 
+import matplotlib.pyplot as plt 
+SEED = 2022
+#seed_everything(SEED)
+import warnings
+warnings.filterwarnings("ignore")
 def create_model():
     model = torchvision.models.resnet18(pretrained=False, num_classes=10)
     model.conv1 = nn.Conv2d(3, 64, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
     model.maxpool = nn.Identity()
     return model
+
+def check_minima(cr_pl, hparams, perturb, range_x=0.2, n_pts=20, num_rand=None):
+  device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+  ckpt = sorted(glob.glob(os.path.join(hparams.runpath, hparams.model_dir, "*.ckpt")))
+
+  ckpt = ckpt[0]
+  if hparams.use_swa:
+    ckpt = "/".join(ckpt.split("/")[:-1]) +"/swa.ckpt"
+
+
+  print(f"Load from: {ckpt}")
+  checkpoint = torch.load(ckpt, map_location=device)
+ 
+  state_dict = {k.replace("model.", ""): v for k, v in checkpoint['state_dict'].items()}
+  cr_pl.model.load_state_dict(state_dict, strict=True)
+
+  cr_pl.model.eval()
+  vec_lenx = torch.linspace(-range_x, 0, int(n_pts/2))
+  vec_lenx = torch.cat([vec_lenx, torch.linspace(0, range_x, int(n_pts/2)+1)[1:]], 0)
+  v1 = utils.flatten(cr_pl.model.parameters())
+  loss_surf = torch.zeros(num_rand, n_pts).to(device)
+  perturb = perturb.to(device)
+
+  train_loader = cr_pl.train_dataloader()
+  start_pars = cr_pl.model.state_dict()
+
+  with torch.no_grad():
+    for ii in range(num_rand):
+    
+      perturb_dir = utils.unflatten_like(perturb[ii: ii+1], cr_pl.model.parameters())
+      for jj in range(n_pts):
+        for i, par in enumerate(cr_pl.model.parameters()):
+          par.data = par.data + vec_lenx[jj] * perturb_dir[i]
+        loss = 0
+        for i, batch in enumerate(train_loader):
+          loss += cr_pl._forward(batch, stage="eval")
+          if i == 0: break
+
+        loss_surf[ii, jj] = (loss / (i+1))
+        cr_pl.model.load_state_dict(start_pars)
+        print(f"Loss at {ii, jj}: {loss_surf[ii, jj]}")
+  loss_surf = torch.mean(loss_surf, dim=0)
+  return vec_lenx.cpu().numpy(), loss_surf.cpu().numpy()
+
+def plot(vec_lenx, loss_surf, hparams):
+  
+  plt.plot(vec_lenx, loss_surf[0], 'r')
+  plt.plot(vec_lenx, loss_surf[1], 'b')
+  plt.grid()
+  plt.xlabel("Model perturbation")
+  plt.ylabel("Loss (log scale)")
+  plt.legend(["Baseline", hparams.model_dir])
+  plt.yscale("log")
+  name = os.path.join(hparams.runpath, hparams.model_dir, "loss.jpg")
+  plt.savefig(name)
+  plt.clf()
+
 
 def main(hparams):
     """
@@ -40,6 +101,29 @@ def main(hparams):
         raise NotImplementedError()
     #backbone = create_model()
     cr_pl = CR_pl(hparams, backbone)
+    if hparams.infer:
+      model_dir = ["baseline", hparams.model_dir]
+      num_rand = 1
+      v1 = utils.flatten(cr_pl.model.parameters())
+      perturb = torch.randn((num_rand, v1.shape[0]))
+      loss_surf = []
+      for dir in model_dir:
+        hparams.model_dir = dir
+        if dir == "baseline":
+       
+          hparams.use_swa = False
+          hparams.use_sn = False
+          
+        backbone = WideResNet(depth=hparams.net_depth, 
+                          n_classes=hparams.num_classes, 
+                          widen_factor=hparams.wide_factor,
+                          use_sn=hparams.use_sn)
+        cr_pl = CR_pl(hparams, backbone)
+        vec_lenx, surf = check_minima(cr_pl, hparams, perturb, range_x=0.2, n_pts=20, num_rand=num_rand)
+        loss_surf.append(surf)
+
+      plot(vec_lenx, loss_surf, hparams)
+      exit()
     #torch.autograd.set_detect_anomaly(True)
     # ------------------------
     # 2 DEFINE CALLBACKS
@@ -179,6 +263,11 @@ if __name__ == '__main__':
         help = "the path to store model directory"
     )
 
+    parent_parser.add_argument(
+        '--infer', 
+        action='store_true', 
+        help="Use Stochastic Weight Perturbation",
+    )
     # each LightningModule defines arguments relevant to it
     parser = CR_pl.add_model_specific_args(parent_parser, root_dir)
     hyperparams = parser.parse_args()
