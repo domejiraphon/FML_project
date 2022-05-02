@@ -38,12 +38,16 @@ def main(hparams):
     backbone_lst = []
     if hparams.backbone_model == 'WResNet':
         load_path_lst = hparams.load_path.split(', ')
-            
-        for _ in load_path_lst:
+        no_sn_lst = hparams.no_sn.split(', ')
+        for idx, _ in enumerate(load_path_lst):
+            if str(idx) in no_sn_lst:
+                use_sn = False
+            else:
+                use_sn = hparams.use_sn
             backbone = WideResNet(depth=hparams.net_depth, 
                                 n_classes=hparams.num_classes, 
                                 widen_factor=hparams.wide_factor,
-                                use_sn=hparams.use_sn)
+                                use_sn=use_sn)
             backbone_lst.append(backbone)
     else:
         raise NotImplementedError()
@@ -56,7 +60,7 @@ def main(hparams):
             model = CR_pl(hparams, backbone_lst[idx])
             checkpoint = torch.load(load_path)
             state_dict = {k.replace("model.", ""): v for k, v in checkpoint['state_dict'].items()}
-            model.load_state_dict(state_dict, strict=True)
+            model.model.load_state_dict(state_dict, strict=True)
             backbone = model.model.cuda().eval()
             model_lst.append(model)
         model = EnsembledModels(model_lst)
@@ -66,7 +70,7 @@ def main(hparams):
         # Test the model from loaded checkpoint
         checkpoint = torch.load(load_path_lst[0])
         state_dict = {k.replace("model.", ""): v for k, v in checkpoint['state_dict'].items()}
-        model.load_state_dict(state_dict, strict=True)
+        model.model.load_state_dict(state_dict, strict=True)
         backbone = model.model.cuda()
         backbone.eval()
 
@@ -140,6 +144,13 @@ if __name__ == '__main__':
         type=str,
         default=None,
         help='load path for saved models, separate by ","'
+    )
+
+    parent_parser.add_argument(
+        '--no_sn',
+        type=str,
+        default=None,
+        help='indices for loaded model that does not use spectral normalization'
     )
 
     parent_parser.add_argument(

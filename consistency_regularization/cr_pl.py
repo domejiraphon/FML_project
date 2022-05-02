@@ -185,7 +185,8 @@ class CR_pl(LightningModule):
     #steps_per_epoch = (int)(45000 // self.hparams.batch_size)
     if self.hparams.scheduler=="multistep":
         lr_decay_gamma = 0.1
-        milestones = [int(0.5 * self.hparams.max_epochs), int(0.75 * self.hparams.max_epochs)]
+        milestones = [80, 100]
+        #milestones = [int(0.5 * self.hparams.max_epochs), int(0.75 * self.hparams.max_epochs)]
         scheduler = MultiStepLR(optimizer, gamma=lr_decay_gamma, milestones=milestones)
     elif self.hparams.scheduler=="cosine":
         scheduler = get_cosine_schedule_with_warmup(optimizer,
